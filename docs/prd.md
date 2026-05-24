@@ -137,6 +137,7 @@ A lightweight visual layer that surfaces key metrics without requiring a chat qu
 ### **Dashboard panels (MVP):**
 
 - Pace vs. Heart Rate over time - line chart, 90-day rolling window
+- Aerobic efficiency trend - line chart, last 6 months
 - VO2 Max trend - line chart, all-time
 - Weekly mileage - bar chart, last 16 weeks
 - Recent runs table - last 10 activities with key stats
@@ -216,7 +217,7 @@ Single-page app. Dashboard sits above the fold. Chat panel is below or in a side
 | ----------------- | --------------------------------------- | ---------------------------------------------------------------------- |
 | M1: Data pipeline | CSV upload + Supabase upsert working    | Can upload Garmin export, see row counts, re-upload without duplicates |
 | M2: Chat baseline | Chat interface returning real answers   | Can ask 'am I getting faster?' and get a data-grounded response        |
-| M3: Dashboard     | 3 trend charts rendering from live data | Pace/HR, VO2 max, weekly volume charts visible on load                 |
+| M3: Dashboard     | 4 trend charts rendering from live data | Pace/HR, aerobic efficiency, VO2 max, weekly volume charts visible on load |
 | M4: Polish        | Deployment + UX cleanup                 | Runs on Vercel, upload UX clear, chat starter prompts in place         |
 
 # **7\. Future Considerations (Post-MVP)**

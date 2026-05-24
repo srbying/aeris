@@ -83,13 +83,13 @@ Rather than calling the OpenAI Responses API directly in /api/chat, wrap the mod
 
 _To swap to Ollama locally: set LLM_PROVIDER=ollama in .env.local. To swap to Claude, Gemini, or another provider post-MVP: add a new provider implementation file and update LLM_PROVIDER. The chat route never needs to change._
 
-## **1.4 Data Scope - Last 12 Months for MVP**
+## **1.4 Data Scope - Configurable Context Window**
 
-Decision: MVP loads only the last 12 months of activity data as chat context. Full historical depth is a post-MVP investment.
+Decision: MVP defaults to loading the last 12 months of activity data as chat context, but the window is controlled by `ACTIVITY_CONTEXT_MONTHS=12` rather than hardcoded. Full historical depth remains stored in Supabase and can be tested by changing the environment variable before adding aggregate-based context selection.
 
-This directly addresses the context size problem. At 5 runs/week for 12 months, the dataset is ~250 rows maximum - well within a single prompt and predictably cheap. The PRD's Section 8 token optimization strategies (query-aware filtering, precomputed aggregates) remain valid post-MVP investments as history accumulates.
+This directly addresses the context size problem while keeping the product decision reversible. At 5 runs/week for 12 months, the dataset is ~250 rows maximum - well within a single prompt and predictably cheap. The PRD's Section 8 token optimization strategies (query-aware filtering, precomputed aggregates) remain valid post-MVP investments as history accumulates.
 
-The full activity history is still stored in Supabase - only the context window sent to the LLM is scoped to 12 months. The dashboard charts can be extended to use the full dataset at any time without architectural changes.
+The full activity history is still stored in Supabase - only the default context window sent to the LLM is scoped to `ACTIVITY_CONTEXT_MONTHS`. The dashboard charts can use the full dataset or chart-specific windows without architectural changes.
 
 # **2\. Full Stack Summary**
 
@@ -109,7 +109,7 @@ The full activity history is still stored in Supabase - only the context window 
 
 ## **3.1 Activity Table**
 
-As defined in the PRD, with one addition: a scope column is not needed - date filtering handles the 12-month context window at query time.
+As defined in the PRD, with one addition: a scope column is not needed - date filtering handles the configurable chat context window at query time.
 
 | **Column**          | **Type**         | **Notes**                              |
 | ------------------- | ---------------- | -------------------------------------- |
@@ -131,7 +131,7 @@ Unique index: (activity_date, activity_type, distance_km) - drives deduplication
 
 ## **3.2 Context Window Strategy**
 
-On each chat request, the /api/chat route fetches running activities from the last 12 months and serializes them as a compact JSON array injected into the OpenAI prompt context:
+On each chat request, the /api/chat route fetches running activities from the configured `ACTIVITY_CONTEXT_MONTHS` window and serializes them as a compact JSON array injected into the OpenAI prompt context:
 
 | **Field**     | **Verbose Key**     | **Compact Key** | **Token Saving** |
 | ------------- | ------------------- | --------------- | ---------------- |
@@ -164,6 +164,7 @@ _Add export const dynamic = 'force-dynamic' to /api/activities and /api/upload t
 | OPENAI_API_KEY                | \[api key\]                     | Server only (/api/chat)                    |
 | LLM_PROVIDER                  | openai                          | Server only - router: 'openai' \| 'ollama' |
 | LLM_MODEL                     | gpt-5.5                         | Server only - override per environment     |
+| ACTIVITY_CONTEXT_MONTHS       | 12                              | Server only - default chat context window  |
 
 _LLM_PROVIDER and LLM_MODEL are the two variables you change to swap the model. In local dev, set LLM_PROVIDER=ollama and point at your local Ollama instance for free experimentation. If Claude is desired later, add an Anthropic provider implementation and set LLM_PROVIDER to that provider key._
 
@@ -194,16 +195,17 @@ Done when: Upload a real Garmin CSV export, see correct row counts, re-upload wi
 
 Done when: Can ask 'am I getting faster?' and receive a data-grounded streamed response.
 
-- GET /api/activities returning last 12 months of running activities
+- GET /api/activities returning persisted activities; chat context builder filters running activities by `ACTIVITY_CONTEXT_MONTHS`
 - POST /api/chat (Edge Runtime) - fetch activities, serialize compact JSON, build system prompt, call LLM router, stream SSE
 - Chat UI: standard thread layout, streaming token rendering, starter prompts on empty state
 - Session-only history (in-memory React state, clears on refresh)
 
 ## **M3 - Dashboard**
 
-Done when: Pace/HR trend, VO2 Max trend, and weekly mileage charts render on page load from live data.
+Done when: Pace/HR trend, aerobic efficiency trend, VO2 Max trend, and weekly mileage charts render on page load from live data.
 
 - Recharts: Pace vs HR line chart (90-day rolling window)
+- Recharts: Aerobic efficiency trend chart (last 6 months)
 - Recharts: VO2 Max trend line chart (all-time)
 - Recharts: Weekly mileage bar chart (last 16 weeks)
 - Recent runs table (last 10 activities)
@@ -288,7 +290,7 @@ _You are Aeris, a data-driven personal running analyst. You help the user unders
 - Aerobic efficiency - 30-day avg: {efficiency_30d}
 - Aerobic efficiency - 90 days ago: {efficiency_90d}
 - Aerobic efficiency - 180 days ago: {efficiency_180d}
-- Recent activities (running, last 12 months, compact JSON): {activities_json}
+- Recent activities (running, configured context window, compact JSON): {activities_json}
 
 _Prompt version constant: export const PROMPT_VERSION = 'v1.0'. Increment when the prompt changes meaningfully. Keep prior versions commented for rollback reference._
 
@@ -372,7 +374,7 @@ All Supabase calls go through lib/activityRepository.ts. Route handlers stay thi
 | **Function**                 | **Signature**                                          | **Used By**                               |
 | ---------------------------- | ------------------------------------------------------ | ----------------------------------------- |
 | getActivities()              | (): Promise&lt;Activity\[\]&gt;                        | /api/activities, dashboard                |
-| getRecentActivities(months?) | (months?: number): Promise&lt;Activity\[\]&gt;         | /api/chat context builder (default: 12mo) |
+| getRecentActivities(months?) | (months?: number): Promise&lt;Activity\[\]&gt;         | /api/chat context builder (default from ACTIVITY_CONTEXT_MONTHS) |
 | getEfficiencyStats()         | (): Promise&lt;EfficiencySnapshot&gt;                  | Chat system prompt builder                |
 | insertActivities(rows)       | (rows: ActivityInput\[\]): Promise&lt;UpsertResult&gt; | /api/upload                               |
 
@@ -464,7 +466,7 @@ The app is shippable when it correctly answers all of the following questions fr
 | Query-aware context filtering (PRD §8.1) | Lower cost, faster responses. Parse question intent before building prompt.  | Medium                    |
 | Precomputed aggregates table (PRD §8.2)  | Monthly/weekly rollups reduce context size by 10x for most queries.          | Medium                    |
 | Prompt caching (PRD §8.4)                | ≥80% cache hit rate on system prompt = ~90% cost reduction on cached tokens. | Low                       |
-| Full historical data scope               | Extend context window beyond 12 months using aggregate strategy.             | Low (after §8.2)          |
+| Full historical data scope               | Extend context beyond the default window using aggregate strategy.            | Low (after §8.2)          |
 | Garmin OAuth / live sync                 | Replace manual CSV upload with automated sync.                               | High                      |
 | Persistent chat history                  | Carry conversation context across sessions.                                  | Low-Medium                |
 | pgvector (run notes)                     | Semantic search if unstructured journal/note fields are added.               | Low - already in Supabase |
@@ -478,5 +480,5 @@ _Multi-user note: The current single-table, no-RLS architecture is fine for pers
 | --------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------- |
 | Exact Garmin CSV field names and units                          | P0 - blocks M1         | Validate against a real export before writing the parser       |
 | Does Garmin include VO2 max in CSV export?                      | P1 - affects dashboard | Check real export; fall back to null if absent                 |
-| Context payload size at 12-month scope                          | P1 - affects cost      | Measure token count with real data before M2 deploy            |
+| Context payload size at configured default scope                 | P1 - affects cost      | Measure token count with real data before M2 deploy            |
 | Should chat answer clarifying questions or answer directly?     | P2 - UX decision       | Start with direct answers; revisit if responses feel too broad |

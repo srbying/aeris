@@ -56,6 +56,8 @@ The MVP uses one `activities` table with:
 
 The app computes aerobic efficiency at query time as speed divided by average heart rate. Eligible efficiency runs must be running activities with distance at least 3 km, duration at least 15 minutes, average HR from 120 to 185 bpm, and sufficient pace/duration data.
 
+The chat context window defaults to `ACTIVITY_CONTEXT_MONTHS=12`. Treat this as configuration, not a hardcoded product decision, so the default can be adjusted after testing real Garmin history volume and OpenAI context cost.
+
 ---
 
 ## Milestones
@@ -116,8 +118,8 @@ The app computes aerobic efficiency at query time as speed divided by average he
 
 **Work:**
 
-- Implement repository methods for all activities, recent activities, and efficiency snapshots.
-- Implement pure calculation functions for aerobic efficiency, rolling averages, weekly mileage, pace/HR chart data, VO2 trend data, and recent run formatting.
+- Implement repository methods for all activities, recent activities filtered by `ACTIVITY_CONTEXT_MONTHS`, and efficiency snapshots.
+- Implement pure calculation functions for aerobic efficiency, rolling averages, weekly mileage, pace/HR chart data, efficiency trend chart data, VO2 trend data, and recent run formatting.
 - Implement `/api/activities` with `force-dynamic` behavior.
 - Normalize API response fields to the public contract in the technical plan.
 
@@ -129,6 +131,7 @@ The app computes aerobic efficiency at query time as speed divided by average he
 **Done when:**
 
 - `GET /api/activities` returns normalized persisted activities.
+- Chat context filtering uses `ACTIVITY_CONTEXT_MONTHS=12` by default and can be changed through environment configuration.
 - Dashboard and chat can depend on the same calculation outputs.
 - Tests, types, and build pass.
 
@@ -140,6 +143,7 @@ The app computes aerobic efficiency at query time as speed divided by average he
 
 - Build dashboard composition above the fold.
 - Add Pace vs Heart Rate chart for eligible runs in the last 90 days.
+- Add Aerobic Efficiency Trend chart for eligible runs in the last 6 months.
 - Add VO2 Max trend chart with null and outlier handling.
 - Add weekly mileage bar chart for the last 16 weeks.
 - Add recent runs table for the last 10 activities.
@@ -152,7 +156,7 @@ The app computes aerobic efficiency at query time as speed divided by average he
 
 **Done when:**
 
-- The three PRD dashboard panels and recent runs table render on page load.
+- The four dashboard trend panels and recent runs table render on page load.
 - Insufficient data in one panel does not break the rest of the page.
 - Tests, types, and build pass.
 
@@ -165,7 +169,7 @@ The app computes aerobic efficiency at query time as speed divided by average he
 - Implement LLM provider interface and OpenAI provider.
 - Add LLM factory using `LLM_PROVIDER` and `LLM_MODEL`.
 - Store the Aeris system prompt as a versioned constant.
-- Build chat context from recent running activities, compact JSON, and efficiency snapshots.
+- Build chat context from running activities filtered by `ACTIVITY_CONTEXT_MONTHS`, compact JSON, and efficiency snapshots.
 - Implement `/api/chat` as an Edge Runtime streaming route.
 - Build chat UI with starter prompts, session-only history, streaming assistant messages, and error states.
 
@@ -189,8 +193,8 @@ The app computes aerobic efficiency at query time as speed divided by average he
 **Work:**
 
 - Create deterministic seed data representing six months of runs.
-- Cover the three acceptance tests in `docs/acceptance-tests.md`.
-- Add additional acceptance coverage from `docs/tech-plan.md` for VO2 trend, best pace-to-HR ratio, weekly mileage, and overtraining guardrail.
+- Cover all seven acceptance scenarios in `docs/acceptance-tests.md`.
+- Ensure the monthly mileage spec covers both April-versus-March comparison and highest-mileage-month aggregation.
 - Verify dashboard and chat calculations agree for shared metrics.
 
 **TDD focus:**
@@ -200,7 +204,7 @@ The app computes aerobic efficiency at query time as speed divided by average he
 
 **Done when:**
 
-- Fitness trend, monthly mileage, and best aerobic run scenarios pass.
+- Fitness trend, monthly mileage, VO2 trend, best aerobic run, fastest 10K equivalent, overtraining guardrail, and miles-last-week scenarios pass.
 - The app can answer with correct calculations and confidence language.
 - Tests, types, and build pass.
 
@@ -248,6 +252,7 @@ The app computes aerobic efficiency at query time as speed divided by average he
 - `OPENAI_API_KEY`
 - `LLM_PROVIDER=openai`
 - `LLM_MODEL=gpt-5.5`
+- `ACTIVITY_CONTEXT_MONTHS=12`
 
 ### Application Packages
 
@@ -308,7 +313,7 @@ The chat route cannot depend on Node-only APIs or packages.
 
 Sending all activity history to the model can become slow or costly.
 
-**Mitigation:** Use the 12-month MVP window and compact context format. Defer query-aware context selection and aggregates to post-MVP.
+**Mitigation:** Use `ACTIVITY_CONTEXT_MONTHS=12` as the default MVP window and compact context format. Keep the value configurable, then defer query-aware context selection and aggregates to post-MVP.
 
 ### Supabase Configuration Drift
 
@@ -354,6 +359,7 @@ The repository is documentation-only today. The MVP should add a focused Next.js
 - `components/upload/file-dropzone.tsx` - drag-and-drop and file picker control.
 - `components/dashboard/dashboard.tsx` - dashboard composition.
 - `components/dashboard/pace-heart-rate-chart.tsx` - pace/HR trend panel.
+- `components/dashboard/efficiency-trend-chart.tsx` - aerobic efficiency trend panel.
 - `components/dashboard/vo2-trend-chart.tsx` - VO2 trend panel.
 - `components/dashboard/weekly-mileage-chart.tsx` - weekly mileage panel.
 - `components/dashboard/recent-runs-table.tsx` - recent activity table.
@@ -369,6 +375,7 @@ The repository is documentation-only today. The MVP should add a focused Next.js
 - `lib/activity/garmin-parser.ts` - Garmin CSV normalization rules.
 - `lib/activity/activity-repository.ts` - Supabase repository methods.
 - `lib/activity/serializers.ts` - database-to-API and chat-context serializers.
+- `lib/config/env.ts` - Zod-validated server environment including `ACTIVITY_CONTEXT_MONTHS`.
 - `lib/calculations/efficiency.ts` - aerobic efficiency and eligibility rules.
 - `lib/calculations/weekly-mileage.ts` - weekly distance aggregation.
 - `lib/calculations/rolling-average.ts` - rolling window helpers.
@@ -391,6 +398,7 @@ The repository is documentation-only today. The MVP should add a focused Next.js
 
 - `tests/unit/garmin-parser.test.ts` - CSV parsing and field normalization.
 - `tests/unit/activity-schema.test.ts` - Zod validation.
+- `tests/unit/env-config.test.ts` - environment validation and context-window default behavior.
 - `tests/unit/efficiency.test.ts` - aerobic efficiency and eligibility rules.
 - `tests/unit/weekly-mileage.test.ts` - weekly mileage aggregation.
 - `tests/unit/dashboard-calculations.test.ts` - chart data shaping.
@@ -401,8 +409,12 @@ The repository is documentation-only today. The MVP should add a focused Next.js
 - `tests/integration/chat-route.test.ts` - chat API validation and streaming behavior.
 - `tests/e2e/upload-dashboard-chat.spec.ts` - primary user journey.
 - `tests/acceptance/fitness-trend.spec.ts` - "faster at same heart rate" acceptance scenario.
-- `tests/acceptance/monthly-mileage.spec.ts` - April versus March mileage scenario.
+- `tests/acceptance/monthly-mileage.spec.ts` - April versus March comparison and highest monthly mileage scenarios.
+- `tests/acceptance/vo2-trend.spec.ts` - VO2 max trend scenario.
 - `tests/acceptance/best-aerobic-run.spec.ts` - best aerobic efficiency run scenario.
+- `tests/acceptance/fastest-10k-equivalent.spec.ts` - fastest 10K equivalent scenario.
+- `tests/acceptance/overtraining-guardrail.spec.ts` - no-hallucinated-coaching guardrail scenario.
+- `tests/acceptance/miles-last-week.spec.ts` - previous-week mileage conversion scenario.
 
 ### Documentation
 
