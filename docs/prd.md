@@ -66,7 +66,7 @@ The user wants to upload their activity history once and then query it conversat
 | --------------------------------- | ----------------- | ---------------------------------------------------- |
 | CSV upload + deduplication        | P0 - Must Have    | Core data pipeline; nothing works without it         |
 | Persistent activity store         | P0 - Must Have    | Upload once, query forever requirement               |
-| Chat interface (Claude-backed)    | P0 - Must Have    | Primary differentiator                               |
+| Chat interface (OpenAI-backed)    | P0 - Must Have    | Primary differentiator                               |
 | Trend dashboard                   | P1 - Should Have  | Ambient context; reduces need to ask basic questions |
 | Duplicate prevention on re-upload | P1 - Should Have  | Critical for good UX on incremental uploads          |
 | Export / data clear               | P2 - Nice to Have | Useful but not blocking                              |
@@ -115,7 +115,7 @@ All parsed activities are stored in a Supabase Postgres table. There is no sessi
 
 ## **3.4 Chat Interface**
 
-The primary interaction surface. The user types a question in plain English. The app queries the full activity history from Supabase, formats it as structured context, and sends it along with the user's question to the Claude API. The response is streamed back and displayed in a chat thread.
+The primary interaction surface. The user types a question in plain English. The app queries the full activity history from Supabase, formats it as structured context, and sends it along with the user's question to the OpenAI Responses API. The response is streamed back and displayed in a chat thread.
 
 ### **Example questions the MVP must handle:**
 
@@ -128,7 +128,7 @@ The primary interaction surface. The user types a question in plain English. The
 
 ### **Context strategy:**
 
-Each chat request pulls all running activities from Supabase, serialized as a compact JSON array (date, distance, avg_pace, avg_hr, vo2max). This is injected into the Claude system prompt along with a persona prompt that instructs Claude to act as a data-driven running analyst. No chat history is persisted server-side for MVP; each session starts fresh (the dataset provides continuity).
+Each chat request pulls all running activities from Supabase, serialized as a compact JSON array (date, distance, avg_pace, avg_hr, vo2max). This is injected into the OpenAI prompt context along with a persona prompt that instructs the model to act as a data-driven running analyst. No chat history is persisted server-side for MVP; each session starts fresh (the dataset provides continuity).
 
 ## **3.5 Trend Dashboard**
 
@@ -148,7 +148,7 @@ A lightweight visual layer that surfaces key metrics without requiring a chat qu
 | **Framework**   | Next.js (App Router)         |
 | --------------- | ---------------------------- |
 | **Database**    | Supabase (Postgres)          |
-| **AI**          | Claude API (claude-sonnet-4) |
+| **AI**          | OpenAI API (gpt-5.5 via Responses API) |
 | **Charts**      | Recharts                     |
 | **Styling**     | Tailwind CSS                 |
 | **Deployment**  | Vercel                       |
@@ -167,7 +167,7 @@ A lightweight visual layer that surfaces key metrics without requiring a chat qu
 
 - User submits message
 - GET /api/activities - fetches all running activity rows from Supabase
-- POST /api/chat - constructs prompt with activity data + user message, calls Claude API
+- POST /api/chat - constructs prompt with activity data + user message, calls OpenAI Responses API
 - Response streamed back via Server-Sent Events
 - Message appended to in-memory chat thread
 
@@ -243,7 +243,7 @@ Parse the user's question before building the prompt and filter the dataset to o
 - 'Am I getting faster?' - send monthly aggregates, not daily rows
 - 'What was my best run?' - send top 10 by pace-to-HR ratio only
 
-Requires a lightweight classification step before the main Claude call, or a two-pass approach where the first pass determines what data to pull.
+Requires a lightweight classification step before the main model call, or a two-pass approach where the first pass determines what data to pull.
 
 ### **2\. Precomputed aggregates in Supabase**
 
@@ -256,11 +256,11 @@ Strip field names to terse keys and drop verbose labels before serializing to th
 - Verbose: { "activity_date": "2026-05-17", "avg_pace_sec_per_km": 522, "avg_hr": 143 }
 - Compressed: { "d": "2026-05-17", "pace": 522, "hr": 143 }
 
-Across 500 rows this meaningfully reduces token count with no loss of fidelity for Claude.
+Across 500 rows this meaningfully reduces token count with no loss of fidelity for the model.
 
-### **4\. Anthropic prompt caching**
+### **4\. OpenAI prompt caching**
 
-Anthropic supports prompt caching on the system prompt. If the activity dataset is injected into the system prompt and does not change between turns in a session, cached tokens cost approximately 10% of normal input token pricing. For a large dataset this is a significant saving on multi-turn conversations with no change to response quality.
+OpenAI supports prompt caching for repeated prompt prefixes. If static instructions and reusable activity context are kept at the beginning of the prompt, cache hits can reduce latency and input token cost on repeated chat turns without changing response quality. For a large dataset this is a significant saving on multi-turn conversations.
 
 | **Target state post-optimization:**                                    |
 | ---------------------------------------------------------------------- |
@@ -274,5 +274,5 @@ Anthropic supports prompt caching on the system prompt. If the activity dataset 
 
 - What is the Garmin bulk CSV export format exactly? Field names and units need to be validated against a real export before building the parser.
 - Does Garmin include VO2 max as a column in the CSV export, or is it only available via the Connect app UI?
-- How large will the context payload get over time? At 5 runs/week over 2 years, that is ~500 activity rows. Need to validate that this fits cleanly in Claude's context without truncation or cost concerns.
+- How large will the context payload get over time? At 5 runs/week over 2 years, that is ~500 activity rows. Need to validate that this fits cleanly in the selected OpenAI model's context window without truncation or cost concerns.
 - Should the chat persona be instructed to ask clarifying questions (e.g., 'do you want to compare effort-matched runs only?') or always answer directly with a best-effort interpretation?

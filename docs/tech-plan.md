@@ -2,7 +2,7 @@
 
 Technical Plan - MVP
 
-_Hosting · Database · AI Chat · Release Strategy_
+_Hosting · Database · OpenAI Chat · Release Strategy_
 
 | **Field** | **Value**          |
 | --------- | ------------------ |
@@ -20,14 +20,14 @@ This section documents the key infrastructure decisions made during planning, in
 
 Decision: Deploy on Vercel free tier using the Edge Runtime for the chat API route.
 
-Vercel is the natural fit given existing experience with the platform, and the Next.js App Router is first-class on Vercel. The one constraint on the free tier is a 10-second serverless function timeout - which is tight for a chat endpoint that must fetch activity data from Supabase and stream a Claude response.
+Vercel is the natural fit given existing experience with the platform, and the Next.js App Router is first-class on Vercel. The one constraint on the free tier is a 10-second serverless function timeout - which is tight for a chat endpoint that must fetch activity data from Supabase and stream an OpenAI response.
 
 The solution is to deploy /api/chat as a Vercel Edge Function rather than a standard Node.js serverless function. Edge Functions run on Vercel's CDN infrastructure and are not subject to the 10-second limit - they are purpose-built for streaming responses. This is the correct pattern for Server-Sent Events (SSE) streaming regardless of cost tier.
 
 | **Consideration** | **Detail**                                                                                |
 | ----------------- | ----------------------------------------------------------------------------------------- |
 | Function timeout  | Edge Runtime: no hard timeout on streaming. Node.js serverless: 10s limit on free tier.   |
-| Streaming support | Edge Runtime has native ReadableStream / SSE support - ideal for Claude streaming.        |
+| Streaming support | Edge Runtime has native ReadableStream / SSE support - ideal for OpenAI Responses API streaming. |
 | Cold starts       | Edge Functions have near-zero cold start time vs. ~500ms for Node.js serverless.          |
 | Constraints       | Edge Runtime cannot use native Node.js modules. All dependencies must be edge-compatible. |
 | Cost              | Free tier covers personal usage volume comfortably.                                       |
@@ -39,7 +39,7 @@ _Action: Set export const runtime = 'edge' on the /api/chat route. All other rou
 
 Decision: Supabase Postgres as specified in the PRD. No vector database needed for MVP.
 
-A vector database (Pinecone, Weaviate, pgvector) is designed for semantic similarity search - finding records that are conceptually similar to a query based on embedding vectors. Aeris's chat strategy is not semantic search. It is structured data injection: pull activity rows from Postgres, serialize to JSON, inject into the Claude prompt as context.
+A vector database (Pinecone, Weaviate, pgvector) is designed for semantic similarity search - finding records that are conceptually similar to a query based on embedding vectors. Aeris's chat strategy is not semantic search. It is structured data injection: pull activity rows from Postgres, serialize to JSON, inject into the model prompt as context.
 
 This is the right approach for Aeris because the data is already highly structured and numerical. Questions like 'am I getting faster?' are answered better by aggregating avg_pace and avg_hr over date ranges than by embedding-similarity search over run records. A vector DB would add complexity with no benefit for MVP.
 
@@ -53,35 +53,35 @@ _Future consideration: If run notes/journal entries are added post-MVP, pgvector
 
 Supabase free tier limits: 500MB database storage, 2GB bandwidth/month, 50,000 monthly active users. All are well within range for a single-user personal tool with hundreds of activity rows.
 
-## **1.3 AI Chat - Claude API with LLM Router Pattern**
+## **1.3 AI Chat - OpenAI API with LLM Router Pattern**
 
-Decision: Claude Sonnet 4 as the default model, wrapped in a lightweight LLM router abstraction that allows swapping providers without changing application code.
+Decision: OpenAI GPT-5.5 via the Responses API as the default model, wrapped in a lightweight LLM router abstraction that allows swapping providers without changing application code.
 
 **Cost Reality Check**
 
-At ~150 running activities (12 months of history), each serialized to approximately 50 tokens, the per-session context payload is ~7,500 tokens. At Claude Sonnet 4 pricing (~\$3 per million input tokens):
+At ~150 running activities (12 months of history), each serialized to approximately 50 tokens, the per-session context payload is ~7,500 tokens. This is small for a single-user personal tool. Input cost, cached-input cost, and output cost should be calculated from the current OpenAI pricing page before launch because model pricing and service tiers can change.
 
-| **Usage Pattern**      | **Input Tokens/Session** | **Cost/Session** | **Monthly Cost** |
-| ---------------------- | ------------------------ | ---------------- | ---------------- |
-| Light (5 questions)    | ~37,500                  | ~\$0.11          | ~\$0.50          |
-| Regular (10 questions) | ~75,000                  | ~\$0.23          | ~\$1.00          |
-| Heavy (20 questions)   | ~150,000                 | ~\$0.45          | ~\$2.00          |
+| **Usage Pattern**      | **Estimated Input Tokens/Session** | **Cost Note**                                      |
+| ---------------------- | ---------------------------------- | -------------------------------------------------- |
+| Light (5 questions)    | ~37,500                            | Recalculate from current OpenAI pricing            |
+| Regular (10 questions) | ~75,000                            | Recalculate from current OpenAI pricing            |
+| Heavy (20 questions)   | ~150,000                           | Output length and reasoning effort drive variance  |
 
-This is low enough that Claude API is the clear choice for quality and simplicity at launch. Open-source alternatives (Llama 3, Mistral, Qwen) require either local GPU resources or paid managed GPU hosting (Replicate, Modal, HuggingFace Inference Endpoints), which adds operational complexity that outweighs the cost savings at this usage volume.
+This is low enough that the OpenAI API is the clear choice for quality and simplicity at launch. Open-source alternatives (Llama 3, Mistral, Qwen) require either local GPU resources or paid managed GPU hosting (Replicate, Modal, HuggingFace Inference Endpoints), which adds operational complexity that outweighs the cost savings at this usage volume.
 
 **LLM Router Architecture**
 
-Rather than calling the Claude API directly in /api/chat, wrap the model call behind a thin provider interface. This costs ~30 minutes of setup and gives you a clean swap point for any future model change.
+Rather than calling the OpenAI Responses API directly in /api/chat, wrap the model call behind a thin provider interface. This costs ~30 minutes of setup and gives you a clean swap point for any future model or provider change.
 
 | **File**          | **Purpose**                                                                         |
 | ----------------- | ----------------------------------------------------------------------------------- |
 | lib/llm/types.ts  | LLMProvider interface: { complete(messages, options): AsyncIterable&lt;string&gt; } |
-| lib/llm/claude.ts | Claude Anthropic SDK implementation                                                 |
+| lib/llm/openai.ts | OpenAI SDK implementation using the Responses API                                    |
 | lib/llm/ollama.ts | Ollama local model implementation (for dev/experimentation)                         |
 | lib/llm/index.ts  | Factory: reads LLM_PROVIDER env var, returns the right provider                     |
-| .env.local        | LLM_PROVIDER=claude \| LLM_MODEL=claude-sonnet-4-20250514                           |
+| .env.local        | LLM_PROVIDER=openai \| LLM_MODEL=gpt-5.5                                            |
 
-_To swap to Ollama locally: set LLM_PROVIDER=ollama in .env.local. To swap to Gemini or another provider post-MVP: add a new implementation file. The chat route never needs to change._
+_To swap to Ollama locally: set LLM_PROVIDER=ollama in .env.local. To swap to Claude, Gemini, or another provider post-MVP: add a new provider implementation file and update LLM_PROVIDER. The chat route never needs to change._
 
 ## **1.4 Data Scope - Last 12 Months for MVP**
 
@@ -93,17 +93,17 @@ The full activity history is still stored in Supabase - only the context window 
 
 # **2\. Full Stack Summary**
 
-| **Layer**     | **Technology**                  | **Tier / Cost** | **Notes**                                         |
-| ------------- | ------------------------------- | --------------- | ------------------------------------------------- |
-| Framework     | Next.js 14 (App Router)         | Free            | As specified in PRD                               |
-| Hosting       | Vercel                          | Free tier       | Edge Runtime for /api/chat                        |
-| Database      | Supabase Postgres               | Free tier       | 500MB storage, plenty for activity rows           |
-| AI - Default  | Claude Sonnet 4 (Anthropic API) | ~\$1-2/mo       | Via LLM router abstraction                        |
-| AI - Dev/Swap | Ollama (local)                  | Free            | Via same router interface                         |
-| Charts        | Recharts                        | Free / MIT      | As specified in PRD                               |
-| Styling       | Tailwind CSS                    | Free            | As specified in PRD                               |
-| CSV Parsing   | PapaParse                       | Free / MIT      | Client-side, as specified in PRD                  |
-| Vector DB     | None (MVP)                      | -               | pgvector available in Supabase if needed post-MVP |
+| **Layer**     | **Technology**                   | **Tier / Cost** | **Notes**                                         |
+| ------------- | -------------------------------- | --------------- | ------------------------------------------------- |
+| Framework     | Next.js 14 (App Router)          | Free            | As specified in PRD                               |
+| Hosting       | Vercel                           | Free tier       | Edge Runtime for /api/chat                        |
+| Database      | Supabase Postgres                | Free tier       | 500MB storage, plenty for activity rows           |
+| AI - Default  | OpenAI GPT-5.5 (Responses API)   | Usage-based     | Via LLM router abstraction                        |
+| AI - Dev/Swap | Ollama (local)                   | Free            | Via same router interface                         |
+| Charts        | Recharts                         | Free / MIT      | As specified in PRD                               |
+| Styling       | Tailwind CSS                     | Free            | As specified in PRD                               |
+| CSV Parsing   | PapaParse                        | Free / MIT      | Client-side, as specified in PRD                  |
+| Vector DB     | None (MVP)                       | -               | pgvector available in Supabase if needed post-MVP |
 
 # **3\. Data Architecture**
 
@@ -131,7 +131,7 @@ Unique index: (activity_date, activity_type, distance_km) - drives deduplication
 
 ## **3.2 Context Window Strategy**
 
-On each chat request, the /api/chat route fetches running activities from the last 12 months and serializes them as a compact JSON array injected into the Claude system prompt:
+On each chat request, the /api/chat route fetches running activities from the last 12 months and serializes them as a compact JSON array injected into the OpenAI prompt context:
 
 | **Field**     | **Verbose Key**     | **Compact Key** | **Token Saving** |
 | ------------- | ------------------- | --------------- | ---------------- |
@@ -141,7 +141,7 @@ On each chat request, the /api/chat route fetches running activities from the la
 | Distance      | distance_km         | dist            | ~50%             |
 | VO2 Max       | vo2max_estimate     | vo2             | ~60%             |
 
-_Compressed row format (Section 8 of PRD): { d, pace, hr, dist, vo2 } across 250 rows ≈ 3,500-5,000 tokens. Well within Sonnet 4's context window and economical at \$3/M tokens._
+_Compressed row format (Section 8 of PRD): { d, pace, hr, dist, vo2 } across 250 rows ≈ 3,500-5,000 tokens. Well within GPT-5.5's context window and economical for personal usage._
 
 # **4\. API Route Design**
 
@@ -161,11 +161,11 @@ _Add export const dynamic = 'force-dynamic' to /api/activities and /api/upload t
 | ----------------------------- | ------------------------------- | ------------------------------------------ |
 | NEXT_PUBLIC_SUPABASE_URL      | https://\[project\].supabase.co | Client + server                            |
 | NEXT_PUBLIC_SUPABASE_ANON_KEY | \[anon key\]                    | Client + server                            |
-| ANTHROPIC_API_KEY             | \[api key\]                     | Server only (/api/chat)                    |
-| LLM_PROVIDER                  | claude                          | Server only - router: 'claude' \| 'ollama' |
-| LLM_MODEL                     | claude-sonnet-4-20250514        | Server only - override per environment     |
+| OPENAI_API_KEY                | \[api key\]                     | Server only (/api/chat)                    |
+| LLM_PROVIDER                  | openai                          | Server only - router: 'openai' \| 'ollama' |
+| LLM_MODEL                     | gpt-5.5                         | Server only - override per environment     |
 
-_LLM_PROVIDER and LLM_MODEL are the two variables you change to swap the model. In local dev, set LLM_PROVIDER=ollama and point at your local Ollama instance for free experimentation._
+_LLM_PROVIDER and LLM_MODEL are the two variables you change to swap the model. In local dev, set LLM_PROVIDER=ollama and point at your local Ollama instance for free experimentation. If Claude is desired later, add an Anthropic provider implementation and set LLM_PROVIDER to that provider key._
 
 # **6\. Release Plan**
 
@@ -176,7 +176,7 @@ The PRD defines four milestones (M1-M4). This plan maps those to concrete shippe
 - Initialize Next.js 14 project with App Router, Tailwind, TypeScript
 - Connect Supabase - create activities table and unique index
 - Configure Vercel project, link GitHub repo, set environment variables
-- Install Anthropic SDK, wire LLM router with Claude as default
+- Install OpenAI SDK, wire LLM router with OpenAI as default
 - Verify Ollama works locally as fallback (optional but recommended)
 - Validate Garmin CSV export format against real data - confirm field names and units
 
@@ -221,7 +221,7 @@ Done when: Runs on Vercel, upload UX is clear, chat has starter prompts, no brok
 
 # **7\. Aerobic Efficiency Metric**
 
-The PRD's primary fitness question - 'Am I getting faster and fitter over time?' - requires a formally defined metric. Without it, dashboard charts and Claude answers will calculate fitness differently and produce inconsistent results.
+The PRD's primary fitness question - 'Am I getting faster and fitter over time?' - requires a formally defined metric. Without it, dashboard charts and model answers will calculate fitness differently and produce inconsistent results.
 
 ## **7.1 Definition**
 
@@ -254,9 +254,9 @@ Apply these filters consistently across dashboard charts and chat context:
 - Rolling 30-day avg efficiency = AVG(efficiency) over eligible runs in a 30-day window
 - Compare current 30-day avg to the same window from 3, 6, and 12 months prior
 - A delta of +5% or more over 90 days is a meaningful improvement signal
-- Pre-compute the 30d / 90d / 180d snapshots and inject into the Claude system prompt
+- Pre-compute the 30d / 90d / 180d snapshots and inject into the OpenAI prompt context
 
-_Pre-computing efficiency snapshots before the prompt is built ensures Claude gives consistent answers and doesn't re-derive the metric differently each time._
+_Pre-computing efficiency snapshots before the prompt is built ensures the model gives consistent answers and doesn't re-derive the metric differently each time._
 
 # **8\. System Prompt Specification**
 
@@ -395,8 +395,8 @@ _UpsertResult: { inserted: number, skipped: number, errors: string\[\] }. Effici
 
 | **Scenario**                  | **Behavior**                   | **User Message**                                        |
 | ----------------------------- | ------------------------------ | ------------------------------------------------------- |
-| Anthropic API timeout (> 30s) | Retry once, then surface error | 'Taking longer than expected. Please try again.'        |
-| Anthropic API error (5xx)     | Surface error immediately      | 'Something went wrong. Please try again.'               |
+| OpenAI API timeout (> 30s)    | Retry once, then surface error | 'Taking longer than expected. Please try again.'        |
+| OpenAI API error (5xx)        | Surface error immediately      | 'Something went wrong. Please try again.'               |
 | No activities uploaded        | Block chat, show upload CTA    | 'Upload your Garmin data to start chatting with Aeris.' |
 | Stream interrupted            | Show partial + error indicator | 'Response interrupted. Here's what I had so far...'     |
 
@@ -479,4 +479,4 @@ _Multi-user note: The current single-table, no-RLS architecture is fine for pers
 | Exact Garmin CSV field names and units                          | P0 - blocks M1         | Validate against a real export before writing the parser       |
 | Does Garmin include VO2 max in CSV export?                      | P1 - affects dashboard | Check real export; fall back to null if absent                 |
 | Context payload size at 12-month scope                          | P1 - affects cost      | Measure token count with real data before M2 deploy            |
-| Should chat Claude ask clarifying questions or answer directly? | P2 - UX decision       | Start with direct answers; revisit if responses feel too broad |
+| Should chat answer clarifying questions or answer directly?     | P2 - UX decision       | Start with direct answers; revisit if responses feel too broad |

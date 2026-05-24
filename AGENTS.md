@@ -20,7 +20,7 @@ Tech Stack
 - Next.js
 - TypeScript
 - Supabase
-- Claude
+- OpenAI
 - Recharts
 - Tailwind
 
