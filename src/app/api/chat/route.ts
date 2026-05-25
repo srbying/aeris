@@ -11,15 +11,27 @@ import type { LLMMessage } from "../../../lib/llm/types";
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
+const MAX_CHAT_MESSAGE_LENGTH = 2000;
+const MAX_CHAT_HISTORY_MESSAGES = 10;
+
 const chatRequestSchema = z.object({
-  message: z.string().trim().min(1, "message is required"),
+  message: z
+    .string()
+    .trim()
+    .min(1, "message is required")
+    .max(MAX_CHAT_MESSAGE_LENGTH, "message must be 2000 characters or fewer"),
   history: z
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string().trim().min(1),
+        content: z
+          .string()
+          .trim()
+          .min(1, "history content is required")
+          .max(MAX_CHAT_MESSAGE_LENGTH, "history content must be 2000 characters or fewer"),
       }),
     )
+    .max(MAX_CHAT_HISTORY_MESSAGES, "history must include 10 messages or fewer")
     .default([]),
 });
 
@@ -48,7 +60,7 @@ export async function POST(request: Request): Promise<Response> {
       { role: "user", content: parsedRequest.data.message },
     ];
 
-    return streamSse(provider.stream({ messages }));
+    return streamSse(provider.stream({ messages, signal: request.signal }));
   } catch {
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },

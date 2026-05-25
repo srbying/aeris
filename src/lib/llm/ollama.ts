@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { LLMProvider, LLMStreamRequest } from "./types";
 
 type OllamaProviderOptions = {
@@ -5,6 +6,12 @@ type OllamaProviderOptions = {
   baseUrl?: string;
   fetch?: typeof fetch;
 };
+
+const OllamaResponseSchema = z.object({
+  message: z.object({
+    content: z.string(),
+  }),
+});
 
 export function createOllamaProvider({
   model,
@@ -31,17 +38,10 @@ export function createOllamaProvider({
       }
 
       const body: unknown = await response.json();
+      const parsedBody = OllamaResponseSchema.safeParse(body);
 
-      if (
-        body &&
-        typeof body === "object" &&
-        "message" in body &&
-        body.message &&
-        typeof body.message === "object" &&
-        "content" in body.message &&
-        typeof body.message.content === "string"
-      ) {
-        yield body.message.content;
+      if (parsedBody.success) {
+        yield parsedBody.data.message.content;
       }
     },
   };

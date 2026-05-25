@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { activityInputSchema } from "./schema";
 import type {
   Activity,
@@ -31,6 +32,36 @@ type DatabaseActivityRow = {
   raw_csv_row: Record<string, string>;
   created_at: string;
 };
+
+const numericDatabaseFieldSchema = z.union([z.number(), z.string()]);
+
+const activityRowSchema = z.object({
+  id: z.string().min(1),
+  activity_date: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "activity_date must be a valid date",
+  }),
+  activity_type: z.string().min(1),
+  distance_km: numericDatabaseFieldSchema.refine((value) => Number.isFinite(Number(value)), {
+    message: "distance_km must be numeric",
+  }),
+  duration_seconds: z.number().int().positive(),
+  avg_pace_sec_per_km: z.number().int().nonnegative().nullable(),
+  avg_hr: z.number().int().nonnegative().nullable(),
+  max_hr: z.number().int().nonnegative().nullable(),
+  calories: z.number().int().nonnegative().nullable(),
+  ascent_m: z.number().int().nonnegative().nullable(),
+  vo2max_estimate: numericDatabaseFieldSchema
+    .refine((value) => Number.isFinite(Number(value)), {
+      message: "vo2max_estimate must be numeric",
+    })
+    .nullable(),
+  raw_csv_row: z.record(z.string(), z.string()),
+  created_at: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "created_at must be a valid date",
+  }),
+});
+
+const activityRowsSchema = z.array(activityRowSchema);
 
 export function createInMemoryActivityRepository(): ActivityRepository {
   const activities = new Map<string, Activity>();
@@ -206,12 +237,14 @@ export function createSupabaseActivityRepository(): ActivityRepository {
     },
 
     async getRecentActivities(options) {
-      const since = monthsBefore(options.now ?? new Date(), options.months).toISOString();
+      const now = options.now ?? new Date();
+      const since = monthsBefore(now, options.months).toISOString();
       const searchParams = new URLSearchParams({
         select: "*",
         order: "activity_date.asc",
-        activity_date: `gte.${since}`,
       });
+      searchParams.append("activity_date", `gte.${since}`);
+      searchParams.append("activity_date", `lte.${now.toISOString()}`);
 
       return fetchSupabaseActivities(searchParams.toString());
     },
@@ -275,12 +308,9 @@ async function fetchSupabaseActivities(query: string): Promise<Activity[]> {
   }
 
   const rows: unknown = await response.json();
+  const parsedRows = activityRowsSchema.parse(rows);
 
-  if (!Array.isArray(rows)) {
-    throw new Error("Supabase activities response was not an array.");
-  }
-
-  return sortActivities(rows.map((row) => fromDatabaseRow(row as DatabaseActivityRow)));
+  return sortActivities(parsedRows.map(fromDatabaseRow));
 }
 
 function uploadFailedResult(

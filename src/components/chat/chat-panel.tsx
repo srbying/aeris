@@ -1,16 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { z } from "zod";
 import { ChatInput } from "./chat-input";
 import { type ChatMessage, MessageList } from "./message-list";
 
 type ChatStatus = "idle" | "streaming";
 
-type StreamEvent = {
-  delta?: string;
-  done?: boolean;
-  error?: string;
-};
+const StreamEventSchema = z
+  .object({
+    delta: z.string().optional(),
+    done: z.boolean().optional(),
+    error: z.string().optional(),
+  })
+  .strict();
+
+type StreamEvent = z.infer<typeof StreamEventSchema>;
 
 const STARTER_PROMPTS = [
   "Am I getting faster at the same heart rate?",
@@ -41,7 +46,9 @@ export function ChatPanel() {
       role: "assistant",
       content: "",
     };
-    const history = messages.map(({ role, content }) => ({ role, content }));
+    const history = messages
+      .filter((message) => message.content.trim().length > 0)
+      .map(({ role, content }) => ({ role, content }));
 
     setMessages((currentMessages) => [...currentMessages, userMessage, assistantMessage]);
     setDraft("");
@@ -191,7 +198,10 @@ function parseSseEvent(event: string): StreamEvent | null {
   }
 
   try {
-    return JSON.parse(dataLine.replace(/^data:\s*/, "")) as StreamEvent;
+    const parsed: unknown = JSON.parse(dataLine.replace(/^data:\s*/, ""));
+    const streamEvent = StreamEventSchema.safeParse(parsed);
+
+    return streamEvent.success ? streamEvent.data : null;
   } catch {
     return null;
   }

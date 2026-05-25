@@ -35,14 +35,15 @@ export async function buildChatContext({
 }: BuildChatContextOptions): Promise<ChatContext> {
   const months = getActivityContextMonths();
   const activities = await repository.getRecentActivities({ months, now });
-  const serializedActivities = serializeActivitiesForPrompt(activities, { months, now });
+  const runningActivities = filterPromptActivities(activities, { months, now });
+  const serializedActivities = serializeActivitiesForPrompt(runningActivities, { months, now });
 
   return {
     contextWindowMonths: months,
     activityCount: serializedActivities.length,
     activities: serializedActivities,
     activitiesJson: JSON.stringify(serializedActivities),
-    efficiency: buildEfficiencySnapshots(activities, now),
+    efficiency: buildEfficiencySnapshots(runningActivities, now),
   };
 }
 
@@ -50,17 +51,7 @@ export function serializeActivitiesForPrompt(
   activities: Activity[],
   options: { months: number; now: Date },
 ): CompactPromptActivity[] {
-  const since = monthsBefore(options.now, options.months);
-
-  return activities
-    .filter((activity) => {
-      const activityDate = new Date(activity.activityDate);
-      return (
-        activity.activityType === "Running" &&
-        activityDate >= since &&
-        activityDate <= options.now
-      );
-    })
+  return filterPromptActivities(activities, options)
     .sort(
       (left, right) =>
         new Date(left.activityDate).getTime() - new Date(right.activityDate).getTime(),
@@ -72,6 +63,22 @@ export function serializeActivitiesForPrompt(
       dist: activity.distanceKm,
       vo2: activity.vo2maxEstimate,
     }));
+}
+
+function filterPromptActivities(
+  activities: Activity[],
+  options: { months: number; now: Date },
+): Activity[] {
+  const since = monthsBefore(options.now, options.months);
+
+  return activities.filter((activity) => {
+    const activityDate = new Date(activity.activityDate);
+    return (
+      activity.activityType === "Running" &&
+      activityDate >= since &&
+      activityDate <= options.now
+    );
+  });
 }
 
 function buildEfficiencySnapshots(activities: Activity[], now: Date): EfficiencySnapshots {

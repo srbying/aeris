@@ -7,7 +7,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function streamingResponse(events: Array<Record<string, string | boolean>>): Response {
+function streamingResponse(events: Array<Record<string, unknown>>): Response {
   const encoder = new TextEncoder();
 
   return new Response(
@@ -79,5 +79,55 @@ describe("ChatPanel", () => {
       expect(screen.getByText("Here is what I can tell so far.")).toBeTruthy();
       expect(screen.getByText(/response interrupted/i)).toBeTruthy();
     });
+  });
+
+  it("ignores SSE events that do not match the stream event shape", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      streamingResponse([{ delta: 123 }, { delta: "Valid answer." }, { done: true }]),
+    );
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "How am I doing?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Valid answer.")).toBeTruthy();
+    });
+  });
+
+  it("does not send empty assistant placeholders in request history", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(() => Promise.resolve(streamingResponse([{ done: true }])));
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "First question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Second question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    const [, secondRequest] = fetchMock.mock.calls[1];
+    const body = JSON.parse(String(secondRequest?.body)) as {
+      history: Array<{ role: string; content: string }>;
+    };
+
+    expect(body.history).toEqual([{ role: "user", content: "First question" }]);
   });
 });

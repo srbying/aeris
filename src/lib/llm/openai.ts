@@ -1,6 +1,11 @@
+import { z } from "zod";
 import type { LLMMessage, LLMProvider, LLMStreamRequest } from "./types";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const OpenAIOutputTextDeltaSchema = z.object({
+  type: z.literal("response.output_text.delta"),
+  delta: z.string(),
+});
 
 type OpenAIProviderOptions = {
   apiKey: string;
@@ -105,20 +110,10 @@ function parseOpenAIEvent(event: string): string | null {
 
   try {
     const parsed: unknown = JSON.parse(data);
+    const deltaEvent = OpenAIOutputTextDeltaSchema.safeParse(parsed);
 
-    if (
-      parsed &&
-      typeof parsed === "object" &&
-      "type" in parsed &&
-      parsed.type === "response.output_text.delta" &&
-      "delta" in parsed &&
-      typeof parsed.delta === "string"
-    ) {
-      return parsed.delta;
-    }
+    return deltaEvent.success ? deltaEvent.data.delta : null;
   } catch {
     return null;
   }
-
-  return null;
 }

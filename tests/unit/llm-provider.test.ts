@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createLlmProvider } from "../../src/lib/llm";
+import { createOllamaProvider } from "../../src/lib/llm/ollama";
 import { createOpenAIProvider } from "../../src/lib/llm/openai";
 import type { LLMMessage } from "../../src/lib/llm/types";
 
@@ -73,6 +74,23 @@ describe("OpenAI LLM provider", () => {
     );
   });
 
+  it("ignores OpenAI stream events that do not match the delta schema", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      streamingResponse([
+        'data: {"type":"response.output_text.delta","delta":123}',
+        'data: {"type":"response.output_text.delta","delta":"valid"}',
+        "data: [DONE]",
+      ]),
+    );
+    const provider = createOpenAIProvider({
+      apiKey: "test-key",
+      model: "gpt-5.5",
+      fetch: fetchMock,
+    });
+
+    await expect(collect(provider.stream({ messages }))).resolves.toEqual(["valid"]);
+  });
+
   it("surfaces missing OPENAI_API_KEY before a provider can call OpenAI", () => {
     expect(() =>
       createLlmProvider({
@@ -95,5 +113,37 @@ describe("OpenAI LLM provider", () => {
 
     expect(provider.id).toBe("openai");
     expect(provider.model).toBe("gpt-5.5");
+  });
+});
+
+describe("Ollama LLM provider", () => {
+  it("yields message content from a valid Ollama response", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: { content: "local answer" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const provider = createOllamaProvider({
+      model: "llama",
+      fetch: fetchMock,
+    });
+
+    await expect(collect(provider.stream({ messages }))).resolves.toEqual(["local answer"]);
+  });
+
+  it("does not yield content from an invalid Ollama response shape", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: { content: 123 } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const provider = createOllamaProvider({
+      model: "llama",
+      fetch: fetchMock,
+    });
+
+    await expect(collect(provider.stream({ messages }))).resolves.toEqual([]);
   });
 });
