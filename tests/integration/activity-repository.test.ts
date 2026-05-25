@@ -225,4 +225,37 @@ describe("activity repository insert flow", () => {
       source: "database",
     });
   });
+
+  it("bounds Supabase recent activity queries by both start and end dates", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const repository = createSupabaseActivityRepository();
+
+    await repository.getRecentActivities({
+      months: 3,
+      now: new Date("2026-05-25T12:00:00.000Z"),
+    });
+
+    const requestUrl = new URL(String(fetchSpy.mock.calls[0][0]));
+    expect(requestUrl.searchParams.getAll("activity_date")).toEqual([
+      "gte.2026-02-25T12:00:00.000Z",
+      "lte.2026-05-25T12:00:00.000Z",
+    ]);
+  });
+
+  it("rejects invalid Supabase activity row shapes before mapping", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify([{ id: "activity-1", distance_km: "not-a-number" }]), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const repository = createSupabaseActivityRepository();
+
+    await expect(repository.getActivities()).rejects.toThrow();
+  });
 });

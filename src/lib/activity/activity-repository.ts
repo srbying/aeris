@@ -1,26 +1,70 @@
+import { z } from "zod";
 import { activityInputSchema } from "./schema";
-import type { ActivityImportError, ActivityImportResult, ActivityInput } from "./types";
+import type {
+  Activity,
+  ActivityImportError,
+  ActivityImportResult,
+  ActivityInput,
+  ActivityRepository,
+} from "./types";
 
 const DEFAULT_SUPABASE_UPLOAD_TIMEOUT_MS = 10_000;
 const SUPABASE_UPLOAD_FAILED_REASON =
   "Supabase upload failed. Try again after checking the database connection.";
-
-export type ActivityRepository = {
-  insertActivities(rows: ActivityInput[]): Promise<ActivityImportResult>;
-};
-
-type StoredActivity = ActivityInput & {
-  id: string;
-  createdAt: string;
-};
 
 type ValidActivityRow = {
   activity: ActivityInput;
   sourceRow: number;
 };
 
+type DatabaseActivityRow = {
+  id: string;
+  activity_date: string;
+  activity_type: string;
+  distance_km: number | string;
+  duration_seconds: number;
+  avg_pace_sec_per_km: number | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  calories: number | null;
+  ascent_m: number | null;
+  vo2max_estimate: number | string | null;
+  raw_csv_row: Record<string, string>;
+  created_at: string;
+};
+
+const numericDatabaseFieldSchema = z.union([z.number(), z.string()]);
+
+const activityRowSchema = z.object({
+  id: z.string().min(1),
+  activity_date: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "activity_date must be a valid date",
+  }),
+  activity_type: z.string().min(1),
+  distance_km: numericDatabaseFieldSchema.refine((value) => Number.isFinite(Number(value)), {
+    message: "distance_km must be numeric",
+  }),
+  duration_seconds: z.number().int().positive(),
+  avg_pace_sec_per_km: z.number().int().nonnegative().nullable(),
+  avg_hr: z.number().int().nonnegative().nullable(),
+  max_hr: z.number().int().nonnegative().nullable(),
+  calories: z.number().int().nonnegative().nullable(),
+  ascent_m: z.number().int().nonnegative().nullable(),
+  vo2max_estimate: numericDatabaseFieldSchema
+    .refine((value) => Number.isFinite(Number(value)), {
+      message: "vo2max_estimate must be numeric",
+    })
+    .nullable(),
+  raw_csv_row: z.record(z.string(), z.string()),
+  created_at: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
+    message: "created_at must be a valid date",
+  }),
+});
+
+const activityRowsSchema = z.array(activityRowSchema);
+
 export function createInMemoryActivityRepository(): ActivityRepository {
-  const activities = new Map<string, StoredActivity>();
+  const activities = new Map<string, Activity>();
 
   return {
     async insertActivities(rows) {
@@ -66,6 +110,22 @@ export function createInMemoryActivityRepository(): ActivityRepository {
       });
 
       return { inserted, skipped, errors };
+    },
+
+    async getActivities() {
+      return sortActivities([...activities.values()]);
+    },
+
+    async getRecentActivities(options) {
+      const now = options.now ?? new Date();
+      const since = monthsBefore(now, options.months);
+
+      return sortActivities(
+        [...activities.values()].filter((activity) => {
+          const activityDate = new Date(activity.activityDate);
+          return activityDate >= since && activityDate <= now;
+        }),
+      );
     },
   };
 }
@@ -171,6 +231,23 @@ export function createSupabaseActivityRepository(): ActivityRepository {
         clearTimeout(timeoutId);
       }
     },
+
+    async getActivities() {
+      return fetchSupabaseActivities("select=*&order=activity_date.asc");
+    },
+
+    async getRecentActivities(options) {
+      const now = options.now ?? new Date();
+      const since = monthsBefore(now, options.months).toISOString();
+      const searchParams = new URLSearchParams({
+        select: "*",
+        order: "activity_date.asc",
+      });
+      searchParams.append("activity_date", `gte.${since}`);
+      searchParams.append("activity_date", `lte.${now.toISOString()}`);
+
+      return fetchSupabaseActivities(searchParams.toString());
+    },
   };
 }
 
@@ -196,6 +273,44 @@ function hasSupabaseConfig(): boolean {
 
 function dedupeKey(activity: ActivityInput): string {
   return [activity.activityDate, activity.activityType, activity.distanceKm].join("|");
+}
+
+function sortActivities(activities: Activity[]): Activity[] {
+  return [...activities].sort(
+    (left, right) =>
+      new Date(left.activityDate).getTime() - new Date(right.activityDate).getTime(),
+  );
+}
+
+function monthsBefore(now: Date, months: number): Date {
+  const since = new Date(now);
+  since.setUTCMonth(since.getUTCMonth() - months);
+  return since;
+}
+
+async function fetchSupabaseActivities(query: string): Promise<Activity[]> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return [];
+  }
+
+  const response = await fetch(`${supabaseUrl}/rest/v1/activities?${query}`, {
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${supabaseAnonKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch activities from Supabase.");
+  }
+
+  const rows: unknown = await response.json();
+  const parsedRows = activityRowsSchema.parse(rows);
+
+  return sortActivities(parsedRows.map(fromDatabaseRow));
 }
 
 function uploadFailedResult(
@@ -243,5 +358,23 @@ function toDatabaseRow(activity: ActivityInput) {
     ascent_m: activity.ascentM,
     vo2max_estimate: activity.vo2maxEstimate,
     raw_csv_row: activity.rawCsvRow,
+  };
+}
+
+function fromDatabaseRow(row: DatabaseActivityRow): Activity {
+  return {
+    id: row.id,
+    activityDate: row.activity_date,
+    activityType: row.activity_type,
+    distanceKm: Number(row.distance_km),
+    durationSeconds: row.duration_seconds,
+    avgPaceSecPerKm: row.avg_pace_sec_per_km,
+    avgHr: row.avg_hr,
+    maxHr: row.max_hr,
+    calories: row.calories,
+    ascentM: row.ascent_m,
+    vo2maxEstimate: row.vo2max_estimate === null ? null : Number(row.vo2max_estimate),
+    rawCsvRow: row.raw_csv_row,
+    createdAt: row.created_at,
   };
 }

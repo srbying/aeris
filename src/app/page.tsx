@@ -1,3 +1,4 @@
+import { ChatPanel } from "../components/chat/chat-panel";
 import { UploadPanel } from "../components/upload/upload-panel";
 
 export default function Home() {
@@ -12,6 +13,7 @@ export default function Home() {
         </header>
 
         <UploadPanel />
+        <ChatPanel />
       </main>
     </div>
   );
