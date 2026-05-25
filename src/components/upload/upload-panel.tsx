@@ -17,7 +17,7 @@ export function UploadPanel() {
 
   async function uploadSelectedFile() {
     if (!selectedFile) {
-      setError("Choose a Garmin CSV before uploading.");
+      setError(error ?? "Choose a Garmin CSV before uploading.");
       setStatus("error");
       return;
     }
@@ -34,12 +34,17 @@ export function UploadPanel() {
         method: "POST",
         body: formData,
       });
-      const body = await response.json();
+      const contentType = response.headers.get("Content-Type") ?? "";
 
       if (!response.ok) {
-        throw new Error(body.error ?? "Upload failed.");
+        throw new Error(await readUploadError(response, contentType));
       }
 
+      if (!isJsonResponse(contentType)) {
+        throw new Error("Upload response validation failed.");
+      }
+
+      const body = await response.json();
       const parsedBody = uploadResponseSchema.safeParse(body);
 
       if (!parsedBody.success) {
@@ -71,6 +76,12 @@ export function UploadPanel() {
           setError(null);
           setSummary(null);
         }}
+        onFileRejected={(message) => {
+          setSelectedFile(null);
+          setStatus("error");
+          setError(message);
+          setSummary(null);
+        }}
       />
 
       <div className="mt-5 flex items-center gap-3">
@@ -99,4 +110,40 @@ export function UploadPanel() {
       ) : null}
     </section>
   );
+}
+
+async function readUploadError(response: Response, contentType: string): Promise<string> {
+  if (isJsonResponse(contentType)) {
+    try {
+      const body: unknown = await response.json();
+      return getUploadErrorMessage(body) ?? "Upload failed.";
+    } catch {
+      return "Upload failed.";
+    }
+  }
+
+  const text = await response.text();
+  return text.trim() || "Upload failed.";
+}
+
+function isJsonResponse(contentType: string): boolean {
+  return contentType.toLowerCase().includes("json");
+}
+
+function getUploadErrorMessage(body: unknown): string | null {
+  if (!body || typeof body !== "object") {
+    return null;
+  }
+
+  const candidate = body as { error?: unknown; message?: unknown };
+
+  if (typeof candidate.error === "string") {
+    return candidate.error;
+  }
+
+  if (typeof candidate.message === "string") {
+    return candidate.message;
+  }
+
+  return null;
 }

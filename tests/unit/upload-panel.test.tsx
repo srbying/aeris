@@ -63,6 +63,29 @@ describe("UploadPanel", () => {
     });
   });
 
+  it("shows non-JSON upload error text when upload fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response("Gateway temporarily unavailable", {
+        status: 502,
+        headers: { "Content-Type": "text/plain" },
+      }),
+    );
+
+    const { container } = render(<UploadPanel />);
+    const fileInput = container.querySelector('input[type="file"]');
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [new File(["Activity Type,Date\nRunning,2026-05-17"], "garmin.csv")],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("Gateway temporarily unavailable");
+    });
+  });
+
   it("shows an error when the upload response body is malformed", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -91,5 +114,45 @@ describe("UploadPanel", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("Upload response validation failed.");
     });
+  });
+
+  it("rejects non-CSV files before upload", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { container } = render(<UploadPanel />);
+    const fileInput = container.querySelector('input[type="file"]');
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [new File(["not csv"], "garmin.txt", { type: "text/plain" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("Choose a CSV file exported from Garmin.");
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("rejects files over 10MB before upload", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { container } = render(<UploadPanel />);
+    const fileInput = container.querySelector('input[type="file"]');
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [
+          new File([new Uint8Array(10 * 1024 * 1024 + 1)], "garmin.csv", {
+            type: "text/csv",
+          }),
+        ],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+
+    await waitFor(() => {
+      expect(container.textContent).toContain("CSV files must be 10MB or smaller.");
+    });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

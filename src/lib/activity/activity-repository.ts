@@ -1,6 +1,10 @@
 import { activityInputSchema } from "./schema";
 import type { ActivityImportError, ActivityImportResult, ActivityInput } from "./types";
 
+const DEFAULT_SUPABASE_UPLOAD_TIMEOUT_MS = 10_000;
+const SUPABASE_UPLOAD_FAILED_REASON =
+  "Supabase upload failed. Try again after checking the database connection.";
+
 export type ActivityRepository = {
   insertActivities(rows: ActivityInput[]): Promise<ActivityImportResult>;
 };
@@ -8,6 +12,11 @@ export type ActivityRepository = {
 type StoredActivity = ActivityInput & {
   id: string;
   createdAt: string;
+};
+
+type ValidActivityRow = {
+  activity: ActivityInput;
+  sourceRow: number;
 };
 
 export function createInMemoryActivityRepository(): ActivityRepository {
@@ -64,7 +73,7 @@ export function createInMemoryActivityRepository(): ActivityRepository {
 export function createSupabaseActivityRepository(): ActivityRepository {
   return {
     async insertActivities(rows) {
-      const validRows: ActivityInput[] = [];
+      const validRows: ValidActivityRow[] = [];
       const errors: ActivityImportError[] = [];
       let skipped = 0;
 
@@ -84,7 +93,10 @@ export function createSupabaseActivityRepository(): ActivityRepository {
           return;
         }
 
-        validRows.push(parsed.data);
+        validRows.push({
+          activity: parsed.data,
+          sourceRow: index + 1,
+        });
       });
 
       if (validRows.length === 0) {
@@ -95,7 +107,9 @@ export function createSupabaseActivityRepository(): ActivityRepository {
       const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
       if (!supabaseUrl || !supabaseAnonKey) {
-        const memoryResult = await createInMemoryActivityRepository().insertActivities(validRows);
+        const memoryResult = await createInMemoryActivityRepository().insertActivities(
+          validRows.map((row) => row.activity),
+        );
         return {
           inserted: memoryResult.inserted,
           skipped: skipped + memoryResult.skipped,
@@ -103,52 +117,59 @@ export function createSupabaseActivityRepository(): ActivityRepository {
         };
       }
 
-      const response = await fetch(
-        `${supabaseUrl}/rest/v1/activities?on_conflict=activity_date,activity_type,distance_km`,
-        {
-          method: "POST",
-          headers: {
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${supabaseAnonKey}`,
-            "Content-Type": "application/json",
-            Prefer: "resolution=ignore-duplicates,return=representation",
-          },
-          body: JSON.stringify(validRows.map(toDatabaseRow)),
-        },
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(
+        () => abortController.abort(),
+        getSupabaseUploadTimeoutMs(),
       );
 
-      if (!response.ok) {
+      try {
+        const response = await fetch(
+          `${supabaseUrl}/rest/v1/activities?on_conflict=activity_date,activity_type,distance_km`,
+          {
+            method: "POST",
+            headers: {
+              apikey: supabaseAnonKey,
+              Authorization: `Bearer ${supabaseAnonKey}`,
+              "Content-Type": "application/json",
+              Prefer: "resolution=ignore-duplicates,return=representation",
+            },
+            body: JSON.stringify(validRows.map((row) => toDatabaseRow(row.activity))),
+            signal: abortController.signal,
+          },
+        );
+
+        if (!response.ok) {
+          return uploadFailedResult(skipped, validRows.length, errors);
+        }
+
+        const insertedRows = await response.json();
+
+        if (!Array.isArray(insertedRows)) {
+          return uploadFailedResult(skipped, validRows.length, errors);
+        }
+
+        const inserted = insertedRows.length;
+        const duplicateCount = validRows.length - inserted;
+
         return {
-          inserted: 0,
-          skipped: skipped + validRows.length,
+          inserted,
+          skipped: skipped + duplicateCount,
           errors: [
             ...errors,
-            {
-              code: "upload_failed",
-              source: "database",
-              reason: "Supabase upload failed. Try again after checking the database connection.",
-            },
+            ...Array.from({ length: duplicateCount }, (_, index) => ({
+              code: "duplicate" as const,
+              source: "database" as const,
+              row: validRows[inserted + index]?.sourceRow,
+              reason: "Activity already exists for this date, type, and distance.",
+            })),
           ],
         };
+      } catch {
+        return uploadFailedResult(skipped, validRows.length, errors);
+      } finally {
+        clearTimeout(timeoutId);
       }
-
-      const insertedRows = (await response.json()) as unknown[];
-      const inserted = insertedRows.length;
-      const duplicateCount = validRows.length - inserted;
-
-      return {
-        inserted,
-        skipped: skipped + duplicateCount,
-        errors: [
-          ...errors,
-          ...Array.from({ length: duplicateCount }, (_, index) => ({
-            code: "duplicate" as const,
-            source: "database" as const,
-            row: index + 1,
-            reason: "Activity already exists for this date, type, and distance.",
-          })),
-        ],
-      };
     },
   };
 }
@@ -175,6 +196,38 @@ function hasSupabaseConfig(): boolean {
 
 function dedupeKey(activity: ActivityInput): string {
   return [activity.activityDate, activity.activityType, activity.distanceKm].join("|");
+}
+
+function uploadFailedResult(
+  skipped: number,
+  failedRows: number,
+  errors: ActivityImportError[],
+): ActivityImportResult {
+  return {
+    inserted: 0,
+    skipped: skipped + failedRows,
+    errors: [
+      ...errors,
+      {
+        code: "upload_failed",
+        source: "database",
+        reason: SUPABASE_UPLOAD_FAILED_REASON,
+      },
+    ],
+  };
+}
+
+function getSupabaseUploadTimeoutMs(): number {
+  const rawValue = process.env.SUPABASE_UPLOAD_TIMEOUT_MS;
+
+  if (rawValue === undefined) {
+    return DEFAULT_SUPABASE_UPLOAD_TIMEOUT_MS;
+  }
+
+  const parsedValue = Number.parseInt(rawValue, 10);
+  return Number.isInteger(parsedValue) && parsedValue > 0
+    ? parsedValue
+    : DEFAULT_SUPABASE_UPLOAD_TIMEOUT_MS;
 }
 
 function toDatabaseRow(activity: ActivityInput) {
