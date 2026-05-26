@@ -91,6 +91,49 @@ describe("OpenAI LLM provider", () => {
     await expect(collect(provider.stream({ messages }))).resolves.toEqual(["valid"]);
   });
 
+  it("fails malformed OpenAI stream payloads instead of silently completing", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      streamingResponse([
+        'data: {"type":"response.output_text.delta","delta":"partial"}',
+        "data: {not-json}",
+      ]),
+    );
+    const provider = createOpenAIProvider({
+      apiKey: "test-key",
+      model: "gpt-5.5",
+      fetch: fetchMock,
+    });
+
+    await expect(collect(provider.stream({ messages }))).rejects.toThrow(
+      /Malformed OpenAI stream response/,
+    );
+  });
+
+  it("aborts OpenAI streaming requests after the configured timeout", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+          });
+        }),
+    );
+    const provider = createOpenAIProvider({
+      apiKey: "test-key",
+      model: "gpt-5.5",
+      fetch: fetchMock,
+      timeoutMs: 25,
+    });
+
+    const result = collect(provider.stream({ messages }));
+    const assertion = expect(result).rejects.toThrow(/OpenAI request timed out/);
+    await vi.advanceTimersByTimeAsync(25);
+
+    await assertion;
+    vi.useRealTimers();
+  });
+
   it("surfaces missing OPENAI_API_KEY before a provider can call OpenAI", () => {
     expect(() =>
       createLlmProvider({

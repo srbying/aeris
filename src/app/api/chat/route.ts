@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
 const MAX_CHAT_HISTORY_MESSAGES = 10;
+const STREAM_INTERRUPTED_MESSAGE = "Response interrupted. Please retry your question.";
 
 const chatRequestSchema = z.object({
   message: z
@@ -63,7 +64,18 @@ export async function POST(request: Request): Promise<Response> {
       { role: "user", content: parsedRequest.data.message },
     ];
 
-    return streamSse(provider.stream({ messages, signal: request.signal }));
+    let deltas: AsyncIterable<string> | Iterable<string>;
+
+    try {
+      deltas = provider.stream({ messages, signal: request.signal });
+    } catch {
+      return NextResponse.json(
+        { error: "Aeris could not reach the AI provider. Please try again." },
+        { status: 502 },
+      );
+    }
+
+    return streamSse(deltas);
   } catch {
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },
@@ -108,7 +120,7 @@ function streamSse(deltas: AsyncIterable<string> | Iterable<string>): Response {
         controller.enqueue(encoder.encode(toSseEvent({ done: true })));
       } catch {
         controller.enqueue(
-          encoder.encode(toSseEvent({ error: "Something went wrong. Please try again." })),
+          encoder.encode(toSseEvent({ error: STREAM_INTERRUPTED_MESSAGE })),
         );
       } finally {
         controller.close();

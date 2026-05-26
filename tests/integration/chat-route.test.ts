@@ -260,6 +260,68 @@ describe("POST /api/chat", () => {
     expect(provider.stream).not.toHaveBeenCalled();
   });
 
+  it("returns a provider failure when OpenAI cannot start streaming", async () => {
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream: vi.fn(() => {
+        throw new Error("provider unavailable");
+      }),
+    };
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "How many miles did I run in April?",
+        history: [],
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.error).toBe("Aeris could not reach the AI provider. Please try again.");
+  });
+
+  it("streams a friendly error when the provider fails mid-response", async () => {
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      async *stream() {
+        yield "April total";
+        throw new Error("stream interrupted");
+      },
+    };
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "How many miles did I run in April?",
+        history: [],
+      }),
+    );
+    const body = await readStream(response);
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('data: {"delta":"April total"}');
+    expect(body).toContain(
+      'data: {"error":"Response interrupted. Please retry your question."}',
+    );
+  });
+
   it("injects computed date comparison facts into the system prompt", async () => {
     let capturedMessages: LLMMessage[] = [];
     const provider = {

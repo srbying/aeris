@@ -71,16 +71,18 @@ describe("Dashboard", () => {
     let dashboardTimeout: (() => void) | undefined;
 
     vi.spyOn(globalThis, "setTimeout").mockImplementation(
-      (handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-        if (timeout === 3_000 && typeof handler === "function") {
+      (handler: (_: void) => void, timeout?: number) => {
+        if (timeout === 3_000) {
           dashboardTimeout = () => {
-            handler(...args);
+            handler(undefined);
           };
 
-          return 1 as ReturnType<typeof setTimeout>;
+          const placeholderTimeout = originalSetTimeout(() => undefined, 0);
+          clearTimeout(placeholderTimeout);
+          return placeholderTimeout;
         }
 
-        return originalSetTimeout(handler, timeout, ...args);
+        return originalSetTimeout(handler, timeout);
       },
     );
 

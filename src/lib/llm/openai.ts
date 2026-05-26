@@ -11,12 +11,14 @@ type OpenAIProviderOptions = {
   apiKey: string;
   model: string;
   fetch?: typeof fetch;
+  timeoutMs?: number;
 };
 
 export function createOpenAIProvider({
   apiKey,
   model,
   fetch: fetcher = globalThis.fetch,
+  timeoutMs = getOpenAIStreamTimeoutMs(),
 }: OpenAIProviderOptions): LLMProvider {
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is required when LLM_PROVIDER=openai.");
@@ -26,29 +28,52 @@ export function createOpenAIProvider({
     id: "openai",
     model,
     async *stream(request: LLMStreamRequest) {
-      const response = await fetcher(OPENAI_RESPONSES_URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          input: toResponsesInput(request.messages),
-          stream: true,
-        }),
-        signal: request.signal,
-      });
+      const abortController = new AbortController();
+      let didTimeout = false;
+      const timeoutId = setTimeout(() => {
+        didTimeout = true;
+        abortController.abort();
+      }, timeoutMs);
+      const abortFromRequest = () => {
+        abortController.abort();
+      };
 
-      if (!response.ok) {
-        throw new Error("OpenAI request failed.");
+      request.signal?.addEventListener("abort", abortFromRequest, { once: true });
+
+      try {
+        const response = await fetcher(OPENAI_RESPONSES_URL, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            input: toResponsesInput(request.messages),
+            stream: true,
+          }),
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("OpenAI request failed.");
+        }
+
+        if (!response.body) {
+          return;
+        }
+
+        yield* parseResponsesStream(response.body);
+      } catch (error) {
+        if (didTimeout && isAbortError(error)) {
+          throw new Error("OpenAI request timed out.");
+        }
+
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
+        request.signal?.removeEventListener("abort", abortFromRequest);
       }
-
-      if (!response.body) {
-        return;
-      }
-
-      yield* parseResponsesStream(response.body);
     },
   };
 }
@@ -114,6 +139,15 @@ function parseOpenAIEvent(event: string): string | null {
 
     return deltaEvent.success ? deltaEvent.data.delta : null;
   } catch {
-    return null;
+    throw new Error("Malformed OpenAI stream response.");
   }
+}
+
+function getOpenAIStreamTimeoutMs(): number {
+  const parsed = Number.parseInt(process.env.OPENAI_STREAM_TIMEOUT_MS ?? "", 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 30_000;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }

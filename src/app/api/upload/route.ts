@@ -50,6 +50,17 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
+    const uploadFailure = validatedResponse.data.errors.find(
+      (error) => error.code === "upload_failed",
+    );
+
+    if (uploadFailure) {
+      return NextResponse.json(
+        { error: uploadFailure.reason, ...validatedResponse.data },
+        { status: 503 },
+      );
+    }
+
     return NextResponse.json(validatedResponse.data);
   } catch {
     return NextResponse.json(

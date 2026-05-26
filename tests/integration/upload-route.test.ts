@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "../../src/app/api/upload/route";
 import { resetActivityRepositoryForTests } from "../../src/lib/activity/activity-repository";
 
@@ -23,6 +23,10 @@ async function postCsv(csv: string): Promise<Response> {
 
 beforeEach(() => {
   resetActivityRepositoryForTests();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe("POST /api/upload", () => {
@@ -68,5 +72,32 @@ describe("POST /api/upload", () => {
 
     expect(response.status).toBe(413);
     expect(body.error).toMatch(/10MB/);
+  });
+
+  it("returns a retryable service error when Supabase insert fails", async () => {
+    vi.resetModules();
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.supabase.co");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ message: "database unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const { POST: postWithSupabaseEnv } = await import("../../src/app/api/upload/route");
+    const response = await postWithSupabaseEnv(uploadRequest(new File([garminCsv], "garmin.csv")));
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.error).toBe(
+      "Supabase upload failed. Try again after checking the database connection.",
+    );
+    expect(body.errors).toEqual([
+      expect.objectContaining({
+        code: "upload_failed",
+        source: "database",
+      }),
+    ]);
   });
 });

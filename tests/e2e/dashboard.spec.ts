@@ -15,6 +15,11 @@ test("renders dashboard charts and recent runs from fixture-like data", async ({
   await expect(page.getByTestId("vo2-trend-chart")).toBeVisible();
   await expect(page.getByTestId("weekly-mileage-chart")).toBeVisible();
   await expect(page.getByRole("cell", { name: "13.2 km" })).toBeVisible();
+
+  await page.reload();
+
+  await expect(page.getByText("Trends from 8 uploaded activities.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Recent activities" })).toBeVisible();
 });
 
 test("renders empty dashboard state gracefully", async ({ page }) => {
@@ -26,4 +31,19 @@ test("renders empty dashboard state gracefully", async ({ page }) => {
   await expect(page.getByText("No activities uploaded yet.")).toBeVisible();
   await expect(page.getByText("No mileage data yet.")).toBeVisible();
   await expect(page.getByText("Unable to load dashboard data.")).toBeHidden();
+});
+
+test("shows a user-friendly dashboard error when Supabase is unavailable", async ({ page }) => {
+  await page.route("**/api/activities", (route) => {
+    return route.fulfill({
+      contentType: "application/json",
+      json: { error: "Supabase unavailable" },
+      status: 503,
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.getByText("Unable to load dashboard data.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
 });

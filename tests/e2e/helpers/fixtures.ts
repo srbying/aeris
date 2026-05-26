@@ -63,7 +63,7 @@ export async function mockChatStream(page: Page, responseText: string): Promise<
   await page.route("**/api/chat", async (route) => {
     const body = route.request().postDataJSON() as { message?: string };
 
-    if (body.message !== "How many miles did I run in April versus March?") {
+    if (body.message !== "How many miles did I run in April?") {
       return route.fulfill({
         contentType: "application/json",
         json: { error: "Unexpected test message." },
