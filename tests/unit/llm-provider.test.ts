@@ -103,20 +103,55 @@ describe("OpenAI LLM provider", () => {
     ).toThrow(/OPENAI_API_KEY/);
   });
 
-  it("selects OpenAI as the default provider and model", () => {
-    const provider = createLlmProvider({
-      env: {
-        OPENAI_API_KEY: "test-key",
-      },
-      fetch: vi.fn(),
-    });
+  it("throws a configuration warning when LLM_PROVIDER is missing", () => {
+    expect(() =>
+      createLlmProvider({
+        env: {
+          OPENAI_API_KEY: "test-key",
+          LLM_MODEL: "gpt-5.5",
+        },
+        fetch: vi.fn(),
+      }),
+    ).toThrow(/LLM_PROVIDER is required/);
+  });
 
-    expect(provider.id).toBe("openai");
-    expect(provider.model).toBe("gpt-5.5");
+  it("throws a configuration warning when LLM_MODEL is missing", () => {
+    expect(() =>
+      createLlmProvider({
+        env: {
+          OPENAI_API_KEY: "test-key",
+          LLM_PROVIDER: "openai",
+        },
+        fetch: vi.fn(),
+      }),
+    ).toThrow(/LLM_MODEL is required/);
   });
 });
 
 describe("Ollama LLM provider", () => {
+  it("uses the default Ollama URL when OLLAMA_BASE_URL is blank", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: { content: "local answer" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const provider = createLlmProvider({
+      env: {
+        LLM_PROVIDER: "ollama",
+        LLM_MODEL: "llama",
+        OLLAMA_BASE_URL: " ",
+      },
+      fetch: fetchMock,
+    });
+
+    await expect(collect(provider.stream({ messages }))).resolves.toEqual(["local answer"]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:11434/api/chat",
+      expect.any(Object),
+    );
+  });
+
   it("yields message content from a valid Ollama response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ message: { content: "local answer" } }), {

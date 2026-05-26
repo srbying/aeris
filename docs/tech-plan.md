@@ -55,7 +55,7 @@ Supabase free tier limits: 500MB database storage, 2GB bandwidth/month, 50,000 m
 
 ## **1.3 AI Chat - OpenAI API with LLM Router Pattern**
 
-Decision: OpenAI GPT-5.5 via the Responses API as the default model, wrapped in a lightweight LLM router abstraction that allows swapping providers without changing application code.
+Decision: OpenAI GPT-5.5 via the Responses API as the initial configured model, wrapped in a lightweight LLM router abstraction that allows swapping providers without changing application code. `LLM_PROVIDER` and `LLM_MODEL` are required environment variables; the app does not provide runtime defaults and throws a configuration warning if either is missing.
 
 **Cost Reality Check**
 
@@ -79,7 +79,7 @@ Rather than calling the OpenAI Responses API directly in /api/chat, wrap the mod
 | lib/llm/openai.ts | OpenAI SDK implementation using the Responses API                                    |
 | lib/llm/ollama.ts | Ollama local model implementation (for dev/experimentation)                         |
 | lib/llm/index.ts  | Factory: reads LLM_PROVIDER env var, returns the right provider                     |
-| .env.local        | LLM_PROVIDER=openai \| LLM_MODEL=gpt-5.5                                            |
+| .env.local        | Required LLM_PROVIDER and LLM_MODEL values, e.g. openai and gpt-5.5                 |
 
 _To swap to Ollama locally: set LLM_PROVIDER=ollama in .env.local. To swap to Claude, Gemini, or another provider post-MVP: add a new provider implementation file and update LLM_PROVIDER. The chat route never needs to change._
 
@@ -162,8 +162,8 @@ _Add export const dynamic = 'force-dynamic' to /api/activities and /api/upload t
 | NEXT_PUBLIC_SUPABASE_URL      | https://\[project\].supabase.co | Client + server                            |
 | NEXT_PUBLIC_SUPABASE_ANON_KEY | \[anon key\]                    | Client + server                            |
 | OPENAI_API_KEY                | \[api key\]                     | Server only (/api/chat)                    |
-| LLM_PROVIDER                  | openai                          | Server only - router: 'openai' \| 'ollama' |
-| LLM_MODEL                     | gpt-5.5                         | Server only - override per environment     |
+| LLM_PROVIDER                  | required, e.g. openai           | Server only - router: 'openai' \| 'ollama'; no runtime default |
+| LLM_MODEL                     | required, e.g. gpt-5.5          | Server only - selected model; no runtime default |
 | ACTIVITY_CONTEXT_MONTHS       | 12                              | Server only - default chat context window  |
 
 _LLM_PROVIDER and LLM_MODEL are the two variables you change to swap the model. In local dev, set LLM_PROVIDER=ollama and point at your local Ollama instance for free experimentation. If Claude is desired later, add an Anthropic provider implementation and set LLM_PROVIDER to that provider key._
@@ -177,7 +177,7 @@ The PRD defines four milestones (M1-M4). This plan maps those to concrete shippe
 - Initialize Next.js 14 project with App Router, Tailwind, TypeScript
 - Connect Supabase - create activities table and unique index
 - Configure Vercel project, link GitHub repo, set environment variables
-- Install OpenAI SDK, wire LLM router with OpenAI as default
+- Install OpenAI SDK, wire LLM router with required OpenAI env configuration
 - Verify Ollama works locally as fallback (optional but recommended)
 - Validate Garmin CSV export format against real data - confirm field names and units
 

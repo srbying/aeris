@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST, runtime } from "../../src/app/api/chat/route";
 import { resetChatDependenciesForTests, setChatDependenciesForTests } from "../../src/lib/llm/dependencies";
 import type { Activity } from "../../src/lib/activity/types";
+import type { LLMMessage, LLMStreamRequest } from "../../src/lib/llm/types";
 
 afterEach(() => {
   resetChatDependenciesForTests();
@@ -257,5 +258,61 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(409);
     expect(body.error).toBe("Upload your Garmin data to start chatting with Aeris.");
     expect(provider.stream).not.toHaveBeenCalled();
+  });
+
+  it("injects computed date comparison facts into the system prompt", async () => {
+    let capturedMessages: LLMMessage[] = [];
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream(request: LLMStreamRequest) {
+        capturedMessages = request.messages;
+        return ["May 17 took longer because pace was slower."];
+      },
+    };
+
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([
+          activity({
+            activityDate: "2026-05-09T08:00:00.000Z",
+            distanceKm: 18.13,
+            durationSeconds: 4573,
+            avgPaceSecPerKm: 252,
+            avgHr: 146,
+            ascentM: 21,
+          }),
+          activity({
+            activityDate: "2026-05-17T08:00:00.000Z",
+            distanceKm: 17.87,
+            durationSeconds: 4804,
+            avgPaceSecPerKm: 269,
+            avgHr: 148,
+            ascentM: 27,
+          }),
+        ]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message:
+          "on May 17, 2026 I ran longer, but less distance compared to my run on May 9, 2026. Explain why",
+        history: [],
+      }),
+    );
+    const body = await readStream(response);
+    const systemMessage = capturedMessages.find((message) => message.role === "system");
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("May 17 took longer because pace was slower.");
+    expect(systemMessage?.content).toContain("Date comparison facts compact JSON");
+    expect(systemMessage?.content).toContain('"d":"2026-05-17"');
+    expect(systemMessage?.content).toContain('"dur":4804');
+    expect(systemMessage?.content).toContain('"dur":231');
+    expect(systemMessage?.content).toContain("average pace was slower");
   });
 });
