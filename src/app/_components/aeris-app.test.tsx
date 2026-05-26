@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PublicActivity } from "../../lib/activity/types";
 import { AerisApp } from "./aeris-app";
@@ -46,7 +46,7 @@ function jsonResponse(body: unknown): Response {
 }
 
 describe("AerisApp", () => {
-  it("presents chat as the primary workspace with supporting evidence second", async () => {
+  it("presents chat as the primary workspace with chart-backed supporting evidence second", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
 
     render(<AerisApp />);
@@ -64,8 +64,25 @@ describe("AerisApp", () => {
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(primaryWorkspace.textContent).toContain("Aeris chat");
-    expect(supportingEvidence.textContent).toContain("Dashboard");
-    expect(supportingEvidence.textContent).toContain("Garmin upload");
+    expect(
+      within(supportingEvidence).getByRole("heading", { name: "Supporting evidence" }),
+    ).toBeTruthy();
+    expect(
+      within(supportingEvidence).getByRole("heading", { name: "Pace vs heart rate" }),
+    ).toBeTruthy();
+    expect(
+      within(supportingEvidence).getByRole("heading", { name: "Aerobic efficiency" }),
+    ).toBeTruthy();
+    expect(within(supportingEvidence).getByRole("heading", { name: "VO2 max" })).toBeTruthy();
+    expect(
+      within(supportingEvidence).getByRole("heading", { name: "Weekly mileage" }),
+    ).toBeTruthy();
+
+    const importAction = within(supportingEvidence).getByRole("region", {
+      name: /import garmin csv/i,
+    });
+
+    expect(within(importAction).getByRole("button", { name: "Upload CSV" })).toBeTruthy();
   });
 
   it("refreshes the dashboard after a successful CSV upload without a page reload", async () => {

@@ -65,11 +65,14 @@ export function UploadPanel({ onUploadComplete }: UploadPanelProps = {}) {
   }
 
   return (
-    <section className="flex w-full flex-col gap-4 border border-zinc-200 bg-zinc-50 p-6">
+    <section
+      aria-label="Import Garmin CSV"
+      className="flex w-full flex-col gap-4 border border-zinc-200 bg-white p-4"
+    >
       <div className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-zinc-950">Garmin upload</h2>
+        <h2 className="text-base font-semibold text-zinc-950">Import Garmin CSV</h2>
         <p className="text-sm text-zinc-600">
-          Import Garmin activity exports and skip runs that already exist.
+          Add activity exports and skip runs that already exist.
         </p>
       </div>
 

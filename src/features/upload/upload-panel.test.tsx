@@ -18,6 +18,19 @@ function getFileInput(container: HTMLElement): HTMLInputElement {
 }
 
 describe("UploadPanel", () => {
+  it("shows the selected Garmin CSV before upload", () => {
+    const { container } = render(<UploadPanel />);
+    const fileInput = getFileInput(container);
+
+    fireEvent.change(fileInput, {
+      target: {
+        files: [new File(["Activity Type,Date\nRunning,2026-05-17"], "garmin.csv")],
+      },
+    });
+
+    expect(screen.getByText("garmin.csv")).toBeTruthy();
+  });
+
   it("uploads the selected CSV, shows counts, and notifies the parent", async () => {
     const onUploadComplete = vi.fn();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
