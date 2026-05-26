@@ -29,6 +29,7 @@ export function ChatPanel() {
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
 
   async function submitMessage(message: string) {
     const trimmedMessage = message.trim();
@@ -43,6 +44,7 @@ export function ChatPanel() {
     setMessages((currentMessages) => [...currentMessages, userMessage, assistantMessage]);
     setDraft("");
     setStatus("streaming");
+    setStreamingMessageId(assistantMessage.id);
     setError(null);
 
     try {
@@ -59,6 +61,7 @@ export function ChatPanel() {
       setError(caughtError instanceof Error ? caughtError.message : "Chat failed.");
     } finally {
       setStatus("idle");
+      setStreamingMessageId(null);
     }
   }
 
@@ -77,7 +80,7 @@ export function ChatPanel() {
       aria-label="Aeris chat window"
       className="flex min-h-[480px] w-full flex-col overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 shadow-sm shadow-zinc-200/80"
     >
-      <div className="border-b border-zinc-200 bg-white px-5 py-4 sm:px-6">
+      <div className="border-b border-zinc-200 bg-white px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-1">
           <h2 className="text-lg font-semibold text-zinc-950">Aeris chat</h2>
           <p className="max-w-2xl text-sm leading-6 text-zinc-600">
@@ -86,7 +89,7 @@ export function ChatPanel() {
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-5 sm:px-6">
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 py-4 sm:px-6">
         {messages.length === 0 ? (
           <StarterPromptButtons
             disabled={status === "streaming"}
@@ -94,11 +97,12 @@ export function ChatPanel() {
           />
         ) : null}
 
-        <MessageList messages={messages.filter((message) => message.content !== "")} />
-
-        {status === "streaming" ? (
-          <p className="text-sm font-medium text-zinc-500">Aeris is reading the run history...</p>
-        ) : null}
+        <MessageList
+          messages={messages.filter(
+            (message) => message.content !== "" || message.id === streamingMessageId,
+          )}
+          streamingMessageId={streamingMessageId}
+        />
 
         {error ? <p className="text-sm font-medium text-red-700">{error}</p> : null}
       </div>
@@ -149,7 +153,7 @@ function StarterPromptButtons({
       {STARTER_PROMPTS.map((prompt) => (
         <button
           aria-label={`Quick reply: ${prompt}`}
-          className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-left text-sm font-medium leading-5 text-zinc-800 shadow-sm shadow-zinc-200/70 transition hover:border-sky-500 hover:text-zinc-950 disabled:cursor-not-allowed disabled:text-zinc-400"
+          className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-left text-sm font-medium leading-5 text-zinc-800 shadow-sm shadow-zinc-200/70 transition-[border-color,box-shadow,color] duration-200 hover:border-sky-500 hover:text-zinc-950 focus-visible:border-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:text-zinc-400 motion-reduce:transition-none"
           disabled={disabled}
           key={prompt}
           type="button"
