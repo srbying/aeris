@@ -46,6 +46,28 @@ function jsonResponse(body: unknown): Response {
 }
 
 describe("AerisApp", () => {
+  it("presents chat as the primary workspace with supporting evidence second", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+
+    render(<AerisApp />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: /aeris conversation/i })).toBeTruthy();
+    });
+
+    const primaryWorkspace = screen.getByRole("region", { name: /aeris conversation/i });
+    const supportingEvidence = screen.getByRole("complementary", {
+      name: /supporting evidence/i,
+    });
+
+    expect(primaryWorkspace.compareDocumentPosition(supportingEvidence)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(primaryWorkspace.textContent).toContain("Aeris chat");
+    expect(supportingEvidence.textContent).toContain("Dashboard");
+    expect(supportingEvidence.textContent).toContain("Garmin upload");
+  });
+
   it("refreshes the dashboard after a successful CSV upload without a page reload", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
