@@ -67,6 +67,7 @@ export function calculateVo2Trend(activities: Activity[]): Vo2Trend {
   const validActivities = activities
     .filter((activity): activity is Activity & { vo2maxEstimate: number } => {
       return (
+        isValidActivityDate(activity.activityDate) &&
         activity.vo2maxEstimate !== null &&
         activity.vo2maxEstimate >= 30 &&
         activity.vo2maxEstimate <= 80
@@ -170,6 +171,10 @@ function averageEfficiencyNear(
 
 function compareActivityDate(left: Activity, right: Activity): number {
   return new Date(left.activityDate).getTime() - new Date(right.activityDate).getTime();
+}
+
+function isValidActivityDate(value: string): boolean {
+  return !Number.isNaN(new Date(value).getTime());
 }
 
 function monthsBefore(date: Date, months: number): Date {

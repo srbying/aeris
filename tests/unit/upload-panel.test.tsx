@@ -7,6 +7,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function getFileInput(container: HTMLElement): HTMLInputElement {
+  const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+
+  if (!fileInput) {
+    throw new Error("file input not found");
+  }
+
+  return fileInput;
+}
+
 describe("UploadPanel", () => {
   it("uploads the selected CSV, shows counts, and notifies the parent", async () => {
     const onUploadComplete = vi.fn();
@@ -25,10 +35,9 @@ describe("UploadPanel", () => {
     );
 
     const { container } = render(<UploadPanel onUploadComplete={onUploadComplete} />);
-    const fileInput = container.querySelector('input[type="file"]');
+    const fileInput = getFileInput(container);
 
-    expect(fileInput).not.toBeNull();
-    fireEvent.change(fileInput as HTMLInputElement, {
+    fireEvent.change(fileInput, {
       target: {
         files: [new File(["Activity Type,Date\nRunning,2026-05-17"], "garmin.csv")],
       },
@@ -57,9 +66,9 @@ describe("UploadPanel", () => {
     );
 
     const { container } = render(<UploadPanel onUploadComplete={onUploadComplete} />);
-    const fileInput = container.querySelector('input[type="file"]');
+    const fileInput = getFileInput(container);
 
-    fireEvent.change(fileInput as HTMLInputElement, {
+    fireEvent.change(fileInput, {
       target: {
         files: [new File(["Name,Value\nSteven,42"], "bad.csv")],
       },
@@ -81,9 +90,9 @@ describe("UploadPanel", () => {
     );
 
     const { container } = render(<UploadPanel />);
-    const fileInput = container.querySelector('input[type="file"]');
+    const fileInput = getFileInput(container);
 
-    fireEvent.change(fileInput as HTMLInputElement, {
+    fireEvent.change(fileInput, {
       target: {
         files: [new File(["Activity Type,Date\nRunning,2026-05-17"], "garmin.csv")],
       },
@@ -112,9 +121,9 @@ describe("UploadPanel", () => {
     );
 
     const { container } = render(<UploadPanel onUploadComplete={onUploadComplete} />);
-    const fileInput = container.querySelector('input[type="file"]');
+    const fileInput = getFileInput(container);
 
-    fireEvent.change(fileInput as HTMLInputElement, {
+    fireEvent.change(fileInput, {
       target: {
         files: [new File(["Activity Type,Date\nRunning,2026-05-17"], "garmin.csv")],
       },
@@ -131,9 +140,9 @@ describe("UploadPanel", () => {
     const onUploadComplete = vi.fn();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { container } = render(<UploadPanel onUploadComplete={onUploadComplete} />);
-    const fileInput = container.querySelector('input[type="file"]');
+    const fileInput = getFileInput(container);
 
-    fireEvent.change(fileInput as HTMLInputElement, {
+    fireEvent.change(fileInput, {
       target: {
         files: [new File(["not csv"], "garmin.txt", { type: "text/plain" })],
       },
@@ -150,9 +159,9 @@ describe("UploadPanel", () => {
   it("rejects files over 10MB before upload", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const { container } = render(<UploadPanel />);
-    const fileInput = container.querySelector('input[type="file"]');
+    const fileInput = getFileInput(container);
 
-    fireEvent.change(fileInput as HTMLInputElement, {
+    fireEvent.change(fileInput, {
       target: {
         files: [
           new File([new Uint8Array(10 * 1024 * 1024 + 1)], "garmin.csv", {

@@ -70,6 +70,18 @@ describe("calculateVo2Trend", () => {
     });
   });
 
+  it("skips VO2 points with malformed activity dates", () => {
+    const trend = calculateVo2Trend([
+      activity({ activityDate: "not-a-date", vo2maxEstimate: 50 }),
+      activity({ activityDate: "2026-01-01T08:00:00.000Z", vo2maxEstimate: 45 }),
+    ]);
+
+    expect(trend).toEqual({
+      hasEnoughData: false,
+      points: [{ date: "2026-01-01", vo2maxEstimate: 45, rollingAverage7: null }],
+    });
+  });
+
   it("adds a seven-run rolling average once enough VO2 points exist", () => {
     const trend = calculateVo2Trend([
       activity({ activityDate: "2026-01-01T08:00:00.000Z", vo2maxEstimate: 40 }),
