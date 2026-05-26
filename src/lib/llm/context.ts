@@ -182,18 +182,33 @@ function extractQuestionDateKeys(question: string | undefined): string[] {
     return [];
   }
 
-  return Array.from(
-    question.matchAll(
-      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),\s+(\d{4})\b/gi,
+  return [
+    ...Array.from(
+      question.matchAll(
+        /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),?\s+(\d{4})\b/gi,
+      ),
+      (match) => ({
+        index: match.index,
+        value: toDateKey(match[3], match[1], match[2]),
+      }),
     ),
-  )
-    .slice(0, 2)
-    .map((match) => toDateKey(match[1], match[2], match[3]))
-    .filter((value): value is string => value !== null);
+    ...Array.from(question.matchAll(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g), (match) => ({
+      index: match.index,
+      value: toDateKey(match[1], match[2], match[3]),
+    })),
+    ...Array.from(question.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g), (match) => ({
+      index: match.index,
+      value: toDateKey(match[3], match[1], match[2]),
+    })),
+  ]
+    .sort((left, right) => left.index - right.index)
+    .map((match) => match.value)
+    .filter((value): value is string => value !== null)
+    .slice(0, 2);
 }
 
-function toDateKey(monthName: string, dayText: string, yearText: string): string | null {
-  const month = MONTHS[monthName.toLowerCase()];
+function toDateKey(yearText: string, monthText: string, dayText: string): string | null {
+  const month = parseMonth(monthText);
   const day = Number(dayText);
   const year = Number(yearText);
 
@@ -212,6 +227,15 @@ function toDateKey(monthName: string, dayText: string, yearText: string): string
   }
 
   return date.toISOString().slice(0, 10);
+}
+
+function parseMonth(value: string): number | undefined {
+  if (/^\d{1,2}$/.test(value)) {
+    const month = Number(value) - 1;
+    return month >= 0 && month <= 11 ? month : undefined;
+  }
+
+  return MONTHS[value.toLowerCase()];
 }
 
 function buildExplanationHint(

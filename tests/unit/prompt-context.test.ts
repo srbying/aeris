@@ -152,6 +152,37 @@ describe("chat context serialization", () => {
     expect(context.dateComparisonFactsJson).toContain('"dur":4804');
   });
 
+  it.each([
+    ["May 17 2026 vs May 9 2026"],
+    ["2026-05-17 vs 2026-05-09"],
+    ["5/17/2026 vs 5/9/2026"],
+  ])("computes comparison facts from common date format: %s", async (question) => {
+    const repository = {
+      getActivities: vi.fn().mockResolvedValue([]),
+      getRecentActivities: vi.fn().mockResolvedValue([
+        activity({
+          activityDate: "2026-05-09T08:00:00.000Z",
+          distanceKm: 18.13,
+          durationSeconds: 4573,
+          avgPaceSecPerKm: 252,
+        }),
+        activity({
+          activityDate: "2026-05-17T08:00:00.000Z",
+          distanceKm: 17.87,
+          durationSeconds: 4804,
+          avgPaceSecPerKm: 269,
+        }),
+      ]),
+      insertActivities: vi.fn(),
+    } satisfies ActivityRepository;
+
+    const context = await buildChatContext({ repository, now, question });
+
+    expect(context.dateComparisonFacts?.focus.d).toBe("2026-05-17");
+    expect(context.dateComparisonFacts?.baseline.d).toBe("2026-05-09");
+    expect(context.dateComparisonFacts?.delta.dur).toBe(231);
+  });
+
   it("returns null efficiency snapshots when eligible data is sparse", async () => {
     const repository = {
       getActivities: vi.fn().mockResolvedValue([]),

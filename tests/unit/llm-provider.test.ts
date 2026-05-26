@@ -129,6 +129,29 @@ describe("OpenAI LLM provider", () => {
 });
 
 describe("Ollama LLM provider", () => {
+  it("uses the default Ollama URL when OLLAMA_BASE_URL is blank", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: { content: "local answer" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const provider = createLlmProvider({
+      env: {
+        LLM_PROVIDER: "ollama",
+        LLM_MODEL: "llama",
+        OLLAMA_BASE_URL: " ",
+      },
+      fetch: fetchMock,
+    });
+
+    await expect(collect(provider.stream({ messages }))).resolves.toEqual(["local answer"]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://localhost:11434/api/chat",
+      expect.any(Object),
+    );
+  });
+
   it("yields message content from a valid Ollama response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ message: { content: "local answer" } }), {
