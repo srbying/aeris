@@ -24,6 +24,12 @@ export function buildAerisSystemPrompt(context: ChatContext): string {
     `- Aerobic efficiency 90 days ago: ${formatSnapshot(context.efficiency.previous90d)}`,
     `- Aerobic efficiency 180 days ago: ${formatSnapshot(context.efficiency.previous180d)}`,
     `- Recent activities compact JSON: ${context.activitiesJson}`,
+    ...(context.dateComparisonFacts
+      ? [
+          `- Date comparison facts compact JSON: ${context.dateComparisonFactsJson}`,
+          "- For date comparison questions, use the computed comparison facts before raw activity rows and do not claim duration is unavailable when dur is present.",
+        ]
+      : []),
   ].join("\n");
 }
 

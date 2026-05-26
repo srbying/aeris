@@ -241,7 +241,7 @@ The chat context window defaults to `ACTIVITY_CONTEXT_MONTHS=12`. Treat this as 
 ### External Services
 
 - Supabase project with Postgres enabled.
-- OpenAI API key with access to the selected default model.
+- OpenAI API key with access to the selected configured model.
 - Vercel project for deployment.
 - Optional local Ollama runtime for provider experimentation.
 
@@ -250,8 +250,8 @@ The chat context window defaults to `ACTIVITY_CONTEXT_MONTHS=12`. Treat this as 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `OPENAI_API_KEY`
-- `LLM_PROVIDER=openai`
-- `LLM_MODEL=gpt-5.5`
+- `LLM_PROVIDER` required, e.g. `openai`
+- `LLM_MODEL` required, e.g. `gpt-5.5`
 - `ACTIVITY_CONTEXT_MONTHS=12`
 
 ### Application Packages

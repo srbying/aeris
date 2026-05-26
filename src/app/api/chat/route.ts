@@ -44,7 +44,10 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const repository = getChatActivityRepository();
-    const context = await buildChatContext({ repository });
+    const context = await buildChatContext({
+      repository,
+      question: parsedRequest.data.message,
+    });
 
     if (context.activityCount === 0) {
       return NextResponse.json(

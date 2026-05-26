@@ -11,8 +11,8 @@ export function createLlmProvider({
   env = process.env,
   fetch: fetcher = globalThis.fetch,
 }: LlmProviderFactoryOptions = {}): LLMProvider {
-  const provider = env.LLM_PROVIDER?.trim() || "openai";
-  const model = env.LLM_MODEL?.trim() || "gpt-5.5";
+  const provider = requireEnv(env, "LLM_PROVIDER");
+  const model = requireEnv(env, "LLM_MODEL");
 
   if (provider === "openai") {
     return createOpenAIProvider({
@@ -31,6 +31,16 @@ export function createLlmProvider({
   }
 
   throw new Error(`Unsupported LLM_PROVIDER: ${provider}`);
+}
+
+function requireEnv(env: Record<string, string | undefined>, key: string): string {
+  const value = env[key]?.trim();
+
+  if (!value) {
+    throw new Error(`Configuration warning: ${key} is required.`);
+  }
+
+  return value;
 }
 
 export type { LLMMessage, LLMProvider, LLMRole, LLMStreamRequest } from "./types";

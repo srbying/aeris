@@ -103,16 +103,28 @@ describe("OpenAI LLM provider", () => {
     ).toThrow(/OPENAI_API_KEY/);
   });
 
-  it("selects OpenAI as the default provider and model", () => {
-    const provider = createLlmProvider({
-      env: {
-        OPENAI_API_KEY: "test-key",
-      },
-      fetch: vi.fn(),
-    });
+  it("throws a configuration warning when LLM_PROVIDER is missing", () => {
+    expect(() =>
+      createLlmProvider({
+        env: {
+          OPENAI_API_KEY: "test-key",
+          LLM_MODEL: "gpt-5.5",
+        },
+        fetch: vi.fn(),
+      }),
+    ).toThrow(/LLM_PROVIDER is required/);
+  });
 
-    expect(provider.id).toBe("openai");
-    expect(provider.model).toBe("gpt-5.5");
+  it("throws a configuration warning when LLM_MODEL is missing", () => {
+    expect(() =>
+      createLlmProvider({
+        env: {
+          OPENAI_API_KEY: "test-key",
+          LLM_PROVIDER: "openai",
+        },
+        fetch: vi.fn(),
+      }),
+    ).toThrow(/LLM_MODEL is required/);
   });
 });
 
