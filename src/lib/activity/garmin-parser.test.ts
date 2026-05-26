@@ -3,7 +3,7 @@ import {
   FEET_TO_METERS,
   MILES_TO_KM,
   parseGarminCsv,
-} from "../../src/lib/activity/garmin-parser";
+} from "./garmin-parser";
 
 const header = [
   "Activity Type",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Activity } from "../../../src/lib/activity/types";
-import { calculatePaceTrend, calculateVo2Trend } from "../../../src/lib/calculations/dashboard";
+import type { Activity } from "../activity/types";
+import { calculatePaceTrend, calculateVo2Trend } from "./dashboard";
 
 function activity(overrides: Partial<Activity> = {}): Activity {
   return {

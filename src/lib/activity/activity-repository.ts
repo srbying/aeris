@@ -217,9 +217,9 @@ export function createSupabaseActivityRepository(): ActivityRepository {
           skipped: skipped + duplicateCount,
           errors: [
             ...errors,
-            ...Array.from({ length: duplicateCount }, (_, index) => ({
-              code: "duplicate" as const,
-              source: "database" as const,
+            ...Array.from({ length: duplicateCount }, (_, index): ActivityImportError => ({
+              code: "duplicate",
+              source: "database",
               row: validRows[inserted + index]?.sourceRow,
               reason: "Activity already exists for this date, type, and distance.",
             })),

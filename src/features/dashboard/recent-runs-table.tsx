@@ -14,9 +14,9 @@ type RecentRunsTableProps = {
 export function RecentRunsTable({ activities }: RecentRunsTableProps) {
   return (
     <section className="border border-zinc-200 bg-white p-4">
-      <div className="mb-4">
+      <div className="mb-4 flex flex-col gap-2">
         <h3 className="text-base font-semibold text-zinc-950">Recent activities</h3>
-        <p className="mt-1 text-sm text-zinc-600">Last 10 uploaded activities.</p>
+        <p className="text-sm text-zinc-600">Last 10 uploaded activities.</p>
       </div>
 
       {activities.length === 0 ? (
@@ -40,15 +40,15 @@ export function RecentRunsTable({ activities }: RecentRunsTableProps) {
             <tbody>
               {activities.map((activity) => (
                 <tr className="border-b border-zinc-100 last:border-0" key={activity.id}>
-                  <td className="py-3 pr-4 text-zinc-800">{formatActivityDate(activity.activityDate)}</td>
-                  <td className="py-3 pr-4 font-medium text-zinc-950">{activity.activityType}</td>
-                  <td className="py-3 pr-4 text-zinc-800">{formatDistance(activity.distanceKm)}</td>
-                  <td className="py-3 pr-4 text-zinc-800">{formatDuration(activity.durationSeconds)}</td>
-                  <td className="py-3 pr-4 text-zinc-800">{formatPace(activity.avgPaceSecPerKm)}</td>
-                  <td className="py-3 pr-4 text-zinc-800">
+                  <td className="py-2 pr-4 text-zinc-800">{formatActivityDate(activity.activityDate)}</td>
+                  <td className="py-2 pr-4 font-medium text-zinc-950">{activity.activityType}</td>
+                  <td className="py-2 pr-4 text-zinc-800">{formatDistance(activity.distanceKm)}</td>
+                  <td className="py-2 pr-4 text-zinc-800">{formatDuration(activity.durationSeconds)}</td>
+                  <td className="py-2 pr-4 text-zinc-800">{formatPace(activity.avgPaceSecPerKm)}</td>
+                  <td className="py-2 pr-4 text-zinc-800">
                     {formatNumber(activity.avgHr, "No HR")}
                   </td>
-                  <td className="py-3 text-zinc-800">
+                  <td className="py-2 text-zinc-800">
                     {formatNumber(activity.vo2maxEstimate, "No VO2")}
                   </td>
                 </tr>

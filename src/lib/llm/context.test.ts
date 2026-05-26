@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Activity, ActivityRepository } from "../../src/lib/activity/types";
+import type { Activity, ActivityRepository } from "../activity/types";
 import {
   buildChatContext,
   serializeActivitiesForPrompt,
-} from "../../src/lib/llm/context";
-import { PROMPT_VERSION, buildAerisSystemPrompt } from "../../src/lib/llm/prompts";
+} from "./context";
+import { PROMPT_VERSION, buildAerisSystemPrompt } from "./prompts";
 
 const originalContextMonths = process.env.ACTIVITY_CONTEXT_MONTHS;
 const now = new Date("2026-05-25T12:00:00.000Z");

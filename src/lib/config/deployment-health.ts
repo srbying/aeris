@@ -15,13 +15,13 @@ type SupabaseConnectivityResult =
   | { ok: true }
   | { ok: false; error: string };
 
-const REQUIRED_ENVIRONMENT_KEYS = [
+const REQUIRED_ENVIRONMENT_KEYS: string[] = [
   "NEXT_PUBLIC_SUPABASE_URL",
   "NEXT_PUBLIC_SUPABASE_ANON_KEY",
   "OPENAI_API_KEY",
   "LLM_PROVIDER",
   "LLM_MODEL",
-] as const;
+];
 
 export function validateDeploymentEnvironment(
   env: DeploymentEnvironment = process.env,

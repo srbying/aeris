@@ -65,10 +65,10 @@ export function UploadPanel({ onUploadComplete }: UploadPanelProps = {}) {
   }
 
   return (
-    <section className="w-full border border-zinc-200 bg-zinc-50 p-6">
-      <div className="mb-5">
+    <section className="flex w-full flex-col gap-4 border border-zinc-200 bg-zinc-50 p-6">
+      <div className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-zinc-950">Garmin upload</h2>
-        <p className="mt-1 text-sm text-zinc-600">
+        <p className="text-sm text-zinc-600">
           Import Garmin activity exports and skip runs that already exist.
         </p>
       </div>
@@ -89,7 +89,7 @@ export function UploadPanel({ onUploadComplete }: UploadPanelProps = {}) {
         }}
       />
 
-      <div className="mt-5 flex items-center gap-3">
+      <div className="flex items-center gap-4">
         <button
           className="h-10 bg-zinc-950 px-4 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
           type="button"
@@ -105,13 +105,13 @@ export function UploadPanel({ onUploadComplete }: UploadPanelProps = {}) {
       </div>
 
       {status === "success" && summary ? (
-        <p className="mt-4 text-sm font-medium text-emerald-700">
+        <p className="text-sm font-medium text-emerald-700">
           {summary.inserted} runs added, {summary.skipped} already existed.
         </p>
       ) : null}
 
       {status === "error" && error ? (
-        <p className="mt-4 text-sm font-medium text-red-700">{error}</p>
+        <p className="text-sm font-medium text-red-700">{error}</p>
       ) : null}
     </section>
   );
@@ -140,15 +140,22 @@ function getUploadErrorMessage(body: unknown): string | null {
     return null;
   }
 
-  const candidate = body as { error?: unknown; message?: unknown };
+  const error = getStringProperty(body, "error");
 
-  if (typeof candidate.error === "string") {
-    return candidate.error;
+  if (error) {
+    return error;
   }
 
-  if (typeof candidate.message === "string") {
-    return candidate.message;
+  const message = getStringProperty(body, "message");
+
+  if (message) {
+    return message;
   }
 
   return null;
+}
+
+function getStringProperty(value: object, key: string): string | null {
+  const candidate = Object.entries(value).find(([entryKey]) => entryKey === key)?.[1];
+  return typeof candidate === "string" ? candidate : null;
 }

@@ -25,7 +25,7 @@ export function WeeklyMileageChart({ data, hasActivities }: WeeklyMileageChartPr
         <EmptyPanel message="No mileage data yet." />
       ) : (
         <div>
-          <div className="mb-3 text-xs font-medium text-zinc-600">Distance (km)</div>
+          <div className="mb-4 text-xs font-medium text-zinc-600">Distance (km)</div>
           <div className="h-64 min-w-0" data-testid="weekly-mileage-chart">
             <ResponsiveContainer
               height="100%"

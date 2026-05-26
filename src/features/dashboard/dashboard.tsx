@@ -93,20 +93,20 @@ export function Dashboard({ refreshKey = 0 }: DashboardProps = {}) {
 
   if (status === "loading") {
     return (
-      <section className="border border-zinc-200 bg-zinc-50 p-6">
+      <section className="flex flex-col gap-4 border border-zinc-200 bg-zinc-50 p-6">
         <h2 className="text-lg font-semibold text-zinc-950">Dashboard</h2>
-        <p className="mt-3 text-sm font-medium text-zinc-600">Loading dashboard...</p>
+        <p className="text-sm font-medium text-zinc-600">Loading dashboard...</p>
       </section>
     );
   }
 
   if (status === "error") {
     return (
-      <section className="border border-red-200 bg-red-50 p-6">
+      <section className="flex flex-col gap-4 border border-red-200 bg-red-50 p-6">
         <h2 className="text-lg font-semibold text-red-950">Dashboard</h2>
-        <p className="mt-3 text-sm font-medium text-red-700">Unable to load dashboard data.</p>
+        <p className="text-sm font-medium text-red-700">Unable to load dashboard data.</p>
         <button
-          className="mt-4 h-10 border border-red-300 bg-white px-4 text-sm font-medium text-red-800 transition hover:border-red-700"
+          className="h-10 border border-red-300 bg-white px-4 text-sm font-medium text-red-800 transition hover:border-red-700"
           type="button"
           onClick={() => void loadActivities()}
         >
@@ -117,13 +117,13 @@ export function Dashboard({ refreshKey = 0 }: DashboardProps = {}) {
   }
 
   return (
-    <section className="w-full border border-zinc-200 bg-zinc-50 p-6">
-      <div className="mb-5">
+    <section className="flex w-full flex-col gap-4 border border-zinc-200 bg-zinc-50 p-6">
+      <div className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold text-zinc-950">Dashboard</h2>
         {activities.length === 0 ? (
-          <p className="mt-1 text-sm text-zinc-600">Upload Garmin data to see dashboard trends.</p>
+          <p className="text-sm text-zinc-600">Upload Garmin data to see dashboard trends.</p>
         ) : (
-          <p className="mt-1 text-sm text-zinc-600">
+          <p className="text-sm text-zinc-600">
             Trends from {activities.length} uploaded activities.
           </p>
         )}
@@ -139,9 +139,7 @@ export function Dashboard({ refreshKey = 0 }: DashboardProps = {}) {
         />
       </div>
 
-      <div className="mt-4">
-        <RecentRunsTable activities={dashboardData.recentActivities} />
-      </div>
+      <RecentRunsTable activities={dashboardData.recentActivities} />
     </section>
   );
 }

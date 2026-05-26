@@ -28,7 +28,7 @@ export function PaceHeartRateChart({ data }: PaceHeartRateChartProps) {
         <EmptyPanel />
       ) : (
         <div>
-          <div className="mb-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-medium text-zinc-600">
+          <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-zinc-600">
             <span>Pace (min/km)</span>
             <span>Heart rate (bpm)</span>
           </div>

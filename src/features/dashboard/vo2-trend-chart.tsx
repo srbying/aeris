@@ -5,32 +5,28 @@ import {
   Legend,
   Line,
   LineChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import type { EfficiencyTrend } from "../../lib/calculations/dashboard";
+import type { Vo2Trend } from "../../lib/calculations/dashboard";
 import { ChartShell, EmptyPanel } from "./chart-shell";
 import { formatDateLabel } from "./formatters";
 
-type EfficiencyTrendChartProps = {
-  trend: EfficiencyTrend;
+type Vo2TrendChartProps = {
+  trend: Vo2Trend;
 };
 
-export function EfficiencyTrendChart({ trend }: EfficiencyTrendChartProps) {
+export function Vo2TrendChart({ trend }: Vo2TrendChartProps) {
   return (
-    <ChartShell
-      title="Aerobic efficiency"
-      description="Speed per heartbeat for eligible runs in the last 6 months."
-    >
+    <ChartShell title="VO2 max" description="Garmin VO2 estimates across all uploaded history.">
       {!trend.hasEnoughData ? (
         <EmptyPanel />
       ) : (
         <div>
-          <div className="mb-3 text-xs font-medium text-zinc-600">Efficiency</div>
-          <div className="h-64 min-w-0" data-testid="efficiency-trend-chart">
+          <div className="mb-4 text-xs font-medium text-zinc-600">Estimate</div>
+          <div className="h-64 min-w-0" data-testid="vo2-trend-chart">
             <ResponsiveContainer
               height="100%"
               initialDimension={{ width: 600, height: 256 }}
@@ -46,37 +42,26 @@ export function EfficiencyTrendChart({ trend }: EfficiencyTrendChartProps) {
                   tickFormatter={formatDateLabel}
                   tickLine={false}
                 />
-                <YAxis
-                  domain={["dataMin - 0.001", "dataMax + 0.001"]}
-                  tickFormatter={(value) => Number(value).toFixed(3)}
-                  tickLine={false}
-                />
+                <YAxis domain={["dataMin - 2", "dataMax + 2"]} tickLine={false} />
                 <Tooltip
-                  formatter={(value, name) => [Number(value).toFixed(4), name]}
+                  formatter={(value, name) => [Number(value).toFixed(1), name]}
                   labelFormatter={(label) => formatDateLabel(String(label))}
                 />
                 <Legend />
-                {trend.referenceEfficiency !== null ? (
-                  <ReferenceLine
-                    stroke="#71717a"
-                    strokeDasharray="4 4"
-                    y={trend.referenceEfficiency}
-                  />
-                ) : null}
                 <Line
-                  dataKey="efficiency"
+                  dataKey="vo2maxEstimate"
                   dot={{ r: 3 }}
-                  name="Run efficiency"
-                  stroke="#059669"
+                  name="VO2 estimate"
+                  stroke="#7c3aed"
                   strokeWidth={2}
                   type="monotone"
                 />
                 <Line
                   connectNulls
-                  dataKey="rollingAverage30"
+                  dataKey="rollingAverage7"
                   dot={false}
-                  name="30-day average"
-                  stroke="#0f766e"
+                  name="7-run average"
+                  stroke="#4c1d95"
                   strokeWidth={2}
                   type="monotone"
                 />

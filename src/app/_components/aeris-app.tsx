@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ChatPanel } from "./chat/chat-panel";
-import { Dashboard } from "./dashboard/dashboard";
-import { UploadPanel } from "./upload/upload-panel";
+import { ChatPanel } from "../../features/chat/chat-panel";
+import { Dashboard } from "../../features/dashboard/dashboard";
+import { UploadPanel } from "../../features/upload/upload-panel";
 
 export function AerisApp() {
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);

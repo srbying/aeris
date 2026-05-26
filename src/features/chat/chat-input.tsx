@@ -16,10 +16,10 @@ export function ChatInput({ disabled, value, onChange, onSubmit }: ChatInputProp
   }
 
   return (
-    <form className="mt-4 flex gap-3" onSubmit={handleSubmit}>
+    <form className="flex gap-4" onSubmit={handleSubmit}>
       <textarea
         aria-label="Message"
-        className="min-h-12 flex-1 resize-none border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-950 outline-none focus:border-zinc-950"
+        className="min-h-12 flex-1 resize-none border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-950 outline-none focus:border-zinc-950"
         disabled={disabled}
         placeholder="Ask about your running data"
         value={value}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Activity } from "../../../src/lib/activity/types";
-import { calculateWeeklyMileage } from "../../../src/lib/calculations/weekly-mileage";
+import type { Activity } from "../activity/types";
+import { calculateWeeklyMileage } from "./weekly-mileage";
 
 function activity(overrides: Partial<Activity> = {}): Activity {
   return {

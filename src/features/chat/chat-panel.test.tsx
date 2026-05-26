@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ChatPanel } from "../../src/components/chat/chat-panel";
+import { ChatPanel } from "./chat-panel";
 
 afterEach(() => {
   cleanup();

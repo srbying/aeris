@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { activityInputSchema } from "../../src/lib/activity/schema";
-import { getActivityContextMonths } from "../../src/lib/config/env";
+import { getActivityContextMonths } from "../config/env";
+import { activityInputSchema } from "./schema";
 
 const originalContextMonths = process.env.ACTIVITY_CONTEXT_MONTHS;
 

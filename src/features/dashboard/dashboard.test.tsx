@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { Dashboard } from "../../src/components/dashboard/dashboard";
-import type { PublicActivity } from "../../src/lib/activity/types";
+import type { PublicActivity } from "../../lib/activity/types";
+import { Dashboard } from "./dashboard";
 
 afterEach(() => {
   cleanup();

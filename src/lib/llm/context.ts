@@ -118,7 +118,11 @@ function buildEfficiencySnapshots(activities: Activity[], now: Date): Efficiency
 }
 
 function toCompactPromptActivity(activity: Activity): CompactPromptActivity {
-  return omitUndefined({
+  const title = optionalText(activity.rawCsvRow.Title);
+  const moving = parseClockSeconds(activity.rawCsvRow["Moving Time"]);
+  const elapsed = parseClockSeconds(activity.rawCsvRow["Elapsed Time"]);
+
+  return {
     d: activity.activityDate.slice(0, 10),
     pace: activity.avgPaceSecPerKm,
     hr: activity.avgHr,
@@ -126,10 +130,10 @@ function toCompactPromptActivity(activity: Activity): CompactPromptActivity {
     dur: activity.durationSeconds,
     asc: activity.ascentM,
     vo2: activity.vo2maxEstimate,
-    title: optionalText(activity.rawCsvRow.Title),
-    moving: parseClockSeconds(activity.rawCsvRow["Moving Time"]),
-    elapsed: parseClockSeconds(activity.rawCsvRow["Elapsed Time"]),
-  });
+    ...(title === undefined ? {} : { title }),
+    ...(moving === undefined ? {} : { moving }),
+    ...(elapsed === undefined ? {} : { elapsed }),
+  };
 }
 
 function buildDateComparisonFacts(
@@ -286,12 +290,6 @@ function parseClockSeconds(value: string | undefined): number | undefined {
   }
 
   return undefined;
-}
-
-function omitUndefined<T extends Record<string, unknown>>(value: T): T {
-  return Object.fromEntries(
-    Object.entries(value).filter(([, entryValue]) => entryValue !== undefined),
-  ) as T;
 }
 
 function round2(value: number): number {

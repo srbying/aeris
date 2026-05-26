@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   validateDeploymentEnvironment,
   verifySupabaseConnectivity,
-} from "../../src/lib/config/deployment-health";
+} from "./deployment-health";
 
 describe("deployment health checks", () => {
   it("accepts the required production environment without exposing OpenAI keys", () => {

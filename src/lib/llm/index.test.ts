@@ -1,10 +1,10 @@
 // @vitest-environment node
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createLlmProvider } from "../../src/lib/llm";
-import { createOllamaProvider } from "../../src/lib/llm/ollama";
-import { createOpenAIProvider } from "../../src/lib/llm/openai";
-import type { LLMMessage } from "../../src/lib/llm/types";
+import { createLlmProvider } from ".";
+import { createOllamaProvider } from "./ollama";
+import { createOpenAIProvider } from "./openai";
+import type { LLMMessage } from "./types";
 
 afterEach(() => {
   vi.restoreAllMocks();

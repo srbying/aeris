@@ -16,6 +16,7 @@ const StreamEventSchema = z
   .strict();
 
 type StreamEvent = z.infer<typeof StreamEventSchema>;
+type ChatHistoryMessage = Pick<ChatMessage, "role" | "content">;
 
 const STARTER_PROMPTS = [
   "Am I getting faster at the same heart rate?",
@@ -36,19 +37,8 @@ export function ChatPanel() {
       return;
     }
 
-    const userMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: trimmedMessage,
-    };
-    const assistantMessage: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: "",
-    };
-    const history = messages
-      .filter((message) => message.content.trim().length > 0)
-      .map(({ role, content }) => ({ role, content }));
+    const { userMessage, assistantMessage } = createChatExchange(trimmedMessage);
+    const history = buildChatHistory(messages);
 
     setMessages((currentMessages) => [...currentMessages, userMessage, assistantMessage]);
     setDraft("");
@@ -56,32 +46,14 @@ export function ChatPanel() {
     setError(null);
 
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: trimmedMessage,
-          history,
-        }),
+      const streamError = await sendChatMessage({
+        message: trimmedMessage,
+        history,
+        onDelta: (delta) => appendAssistantDelta(assistantMessage.id, delta),
       });
 
-      if (!response.ok) {
-        throw new Error(await readErrorMessage(response));
-      }
-
-      for await (const event of readSseEvents(response)) {
-        if (event.delta) {
-          appendAssistantDelta(assistantMessage.id, event.delta);
-        }
-
-        if (event.error) {
-          setError(event.error);
-          break;
-        }
-
-        if (event.done) {
-          break;
-        }
+      if (streamError) {
+        setError(streamError);
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Chat failed.");
@@ -101,30 +73,19 @@ export function ChatPanel() {
   }
 
   return (
-    <section className="w-full border border-zinc-200 bg-zinc-50 p-6">
-      <div className="mb-5">
-        <h2 className="text-lg font-semibold text-zinc-950">Aeris chat</h2>
-      </div>
+    <section className="flex w-full flex-col gap-4 border border-zinc-200 bg-zinc-50 p-6">
+      <h2 className="text-lg font-semibold text-zinc-950">Aeris chat</h2>
 
       {messages.length === 0 ? (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {STARTER_PROMPTS.map((prompt) => (
-            <button
-              className="border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:text-zinc-400"
-              disabled={status === "streaming"}
-              key={prompt}
-              type="button"
-              onClick={() => void submitMessage(prompt)}
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
+        <StarterPromptButtons
+          disabled={status === "streaming"}
+          onSelect={(prompt) => void submitMessage(prompt)}
+        />
       ) : null}
 
       <MessageList messages={messages.filter((message) => message.content !== "")} />
 
-      {error ? <p className="mt-4 text-sm font-medium text-red-700">{error}</p> : null}
+      {error ? <p className="text-sm font-medium text-red-700">{error}</p> : null}
 
       <ChatInput
         disabled={status === "streaming"}
@@ -134,6 +95,90 @@ export function ChatPanel() {
       />
     </section>
   );
+}
+
+function createChatExchange(content: string): {
+  userMessage: ChatMessage;
+  assistantMessage: ChatMessage;
+} {
+  return {
+    userMessage: {
+      id: crypto.randomUUID(),
+      role: "user",
+      content,
+    },
+    assistantMessage: {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: "",
+    },
+  };
+}
+
+function buildChatHistory(messages: ChatMessage[]): ChatHistoryMessage[] {
+  return messages
+    .filter((message) => message.content.trim().length > 0)
+    .map(({ role, content }) => ({ role, content }));
+}
+
+function StarterPromptButtons({
+  disabled,
+  onSelect,
+}: {
+  disabled: boolean;
+  onSelect(prompt: string): void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {STARTER_PROMPTS.map((prompt) => (
+        <button
+          className="border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-800 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:text-zinc-400"
+          disabled={disabled}
+          key={prompt}
+          type="button"
+          onClick={() => onSelect(prompt)}
+        >
+          {prompt}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+async function sendChatMessage({
+  message,
+  history,
+  onDelta,
+}: {
+  message: string;
+  history: ChatHistoryMessage[];
+  onDelta(delta: string): void;
+}): Promise<string | null> {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, history }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response));
+  }
+
+  for await (const event of readSseEvents(response)) {
+    if (event.delta) {
+      onDelta(event.delta);
+    }
+
+    if (event.error) {
+      return event.error;
+    }
+
+    if (event.done) {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 async function readErrorMessage(response: Response): Promise<string> {
