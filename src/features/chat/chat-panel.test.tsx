@@ -27,11 +27,23 @@ function streamingResponse(events: Array<Record<string, unknown>>): Response {
 }
 
 describe("ChatPanel", () => {
-  it("shows starter prompts when the thread is empty", () => {
+  it("renders a focused chat window with concise ask-help and persistent custom input", () => {
     render(<ChatPanel />);
 
-    expect(screen.getByRole("button", { name: /faster at the same heart rate/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /best pace-to-HR ratio/i })).toBeTruthy();
+    const chatWindow = screen.getByRole("region", { name: /aeris chat window/i });
+
+    expect(chatWindow).toBeTruthy();
+    expect(chatWindow.textContent).toContain("Ask about trends, efforts, and what your runs say over time.");
+    expect(screen.getByRole("textbox", { name: /message/i })).toBeTruthy();
+  });
+
+  it("shows starter prompts as quick-reply actions when the thread is empty", () => {
+    render(<ChatPanel />);
+
+    expect(
+      screen.getByRole("button", { name: /quick reply: am i getting faster at the same heart rate/i }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: /quick reply: which run had my best pace-to-HR ratio/i })).toBeTruthy();
   });
 
   it("submits a message and streams assistant deltas into the thread", async () => {
@@ -56,6 +68,37 @@ describe("ChatPanel", () => {
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
+      }),
+    );
+  });
+
+  it("submits a starter prompt through the same chat flow while keeping custom input available", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      streamingResponse([{ delta: "Your aerobic efficiency is improving." }, { done: true }]),
+    );
+
+    render(<ChatPanel />);
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /quick reply: am i getting faster at the same heart rate/i,
+      }),
+    );
+
+    expect(screen.getByRole("textbox", { name: /message/i })).toBeTruthy();
+    expect(screen.getByText("Am I getting faster at the same heart rate?")).toBeTruthy();
+
+    await waitFor(() => {
+      expect(screen.getByText("Your aerobic efficiency is improving.")).toBeTruthy();
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/chat",
+      expect.objectContaining({
+        body: JSON.stringify({
+          message: "Am I getting faster at the same heart rate?",
+          history: [],
+        }),
       }),
     );
   });
