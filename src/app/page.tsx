@@ -1,5 +1,4 @@
-import { ChatPanel } from "../components/chat/chat-panel";
-import { UploadPanel } from "../components/upload/upload-panel";
+import { AerisApp } from "../components/aeris-app";
 
 export default function Home() {
   return (
@@ -12,8 +11,7 @@ export default function Home() {
           </h1>
         </header>
 
-        <UploadPanel />
-        <ChatPanel />
+        <AerisApp />
       </main>
     </div>
   );

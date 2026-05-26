@@ -8,7 +8,8 @@ afterEach(() => {
 });
 
 describe("UploadPanel", () => {
-  it("uploads the selected CSV and shows inserted and skipped counts", async () => {
+  it("uploads the selected CSV, shows counts, and notifies the parent", async () => {
+    const onUploadComplete = vi.fn();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -23,7 +24,7 @@ describe("UploadPanel", () => {
       ),
     );
 
-    const { container } = render(<UploadPanel />);
+    const { container } = render(<UploadPanel onUploadComplete={onUploadComplete} />);
     const fileInput = container.querySelector('input[type="file"]');
 
     expect(fileInput).not.toBeNull();
@@ -38,9 +39,16 @@ describe("UploadPanel", () => {
       expect(container.textContent).toContain("2 runs added");
       expect(container.textContent).toContain("1 already existed");
     });
+    expect(onUploadComplete).toHaveBeenCalledOnce();
+    expect(onUploadComplete).toHaveBeenCalledWith({
+      inserted: 2,
+      skipped: 1,
+      errors: [],
+    });
   });
 
   it("shows a clear error when upload fails", async () => {
+    const onUploadComplete = vi.fn();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ error: "Upload a Garmin activity export CSV." }), {
         status: 400,
@@ -48,7 +56,7 @@ describe("UploadPanel", () => {
       }),
     );
 
-    const { container } = render(<UploadPanel />);
+    const { container } = render(<UploadPanel onUploadComplete={onUploadComplete} />);
     const fileInput = container.querySelector('input[type="file"]');
 
     fireEvent.change(fileInput as HTMLInputElement, {
@@ -61,6 +69,7 @@ describe("UploadPanel", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("Upload a Garmin activity export CSV.");
     });
+    expect(onUploadComplete).not.toHaveBeenCalled();
   });
 
   it("shows non-JSON upload error text when upload fails", async () => {
@@ -87,6 +96,7 @@ describe("UploadPanel", () => {
   });
 
   it("shows an error when the upload response body is malformed", async () => {
+    const onUploadComplete = vi.fn();
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -101,7 +111,7 @@ describe("UploadPanel", () => {
       ),
     );
 
-    const { container } = render(<UploadPanel />);
+    const { container } = render(<UploadPanel onUploadComplete={onUploadComplete} />);
     const fileInput = container.querySelector('input[type="file"]');
 
     fireEvent.change(fileInput as HTMLInputElement, {
@@ -114,11 +124,13 @@ describe("UploadPanel", () => {
     await waitFor(() => {
       expect(container.textContent).toContain("Upload response validation failed.");
     });
+    expect(onUploadComplete).not.toHaveBeenCalled();
   });
 
   it("rejects non-CSV files before upload", async () => {
+    const onUploadComplete = vi.fn();
     const fetchSpy = vi.spyOn(globalThis, "fetch");
-    const { container } = render(<UploadPanel />);
+    const { container } = render(<UploadPanel onUploadComplete={onUploadComplete} />);
     const fileInput = container.querySelector('input[type="file"]');
 
     fireEvent.change(fileInput as HTMLInputElement, {
@@ -132,6 +144,7 @@ describe("UploadPanel", () => {
       expect(container.textContent).toContain("Choose a CSV file exported from Garmin.");
     });
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(onUploadComplete).not.toHaveBeenCalled();
   });
 
   it("rejects files over 10MB before upload", async () => {

@@ -9,7 +9,11 @@ type UploadSummary = z.infer<typeof uploadResponseSchema>;
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
-export function UploadPanel() {
+type UploadPanelProps = {
+  onUploadComplete?: (summary: UploadSummary) => void;
+};
+
+export function UploadPanel({ onUploadComplete }: UploadPanelProps = {}) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [status, setStatus] = useState<UploadStatus>("idle");
   const [summary, setSummary] = useState<UploadSummary | null>(null);
@@ -53,6 +57,7 @@ export function UploadPanel() {
 
       setSummary(parsedBody.data);
       setStatus("success");
+      onUploadComplete?.(parsedBody.data);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Upload failed.");
       setStatus("error");
