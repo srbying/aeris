@@ -73,19 +73,35 @@ export function ChatPanel() {
   }
 
   return (
-    <section className="flex w-full flex-col gap-4 border border-zinc-200 bg-zinc-50 p-6">
-      <h2 className="text-lg font-semibold text-zinc-950">Aeris chat</h2>
+    <section
+      aria-label="Aeris chat window"
+      className="flex min-h-[480px] w-full flex-col overflow-hidden rounded-lg border border-zinc-200 bg-zinc-50 shadow-sm shadow-zinc-200/80"
+    >
+      <div className="border-b border-zinc-200 bg-white px-5 py-4 sm:px-6">
+        <div className="flex flex-col gap-1">
+          <h2 className="text-lg font-semibold text-zinc-950">Aeris chat</h2>
+          <p className="max-w-2xl text-sm leading-6 text-zinc-600">
+            Ask about trends, efforts, and what your runs say over time.
+          </p>
+        </div>
+      </div>
 
-      {messages.length === 0 ? (
-        <StarterPromptButtons
-          disabled={status === "streaming"}
-          onSelect={(prompt) => void submitMessage(prompt)}
-        />
-      ) : null}
+      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-5 py-5 sm:px-6">
+        {messages.length === 0 ? (
+          <StarterPromptButtons
+            disabled={status === "streaming"}
+            onSelect={(prompt) => void submitMessage(prompt)}
+          />
+        ) : null}
 
-      <MessageList messages={messages.filter((message) => message.content !== "")} />
+        <MessageList messages={messages.filter((message) => message.content !== "")} />
 
-      {error ? <p className="text-sm font-medium text-red-700">{error}</p> : null}
+        {status === "streaming" ? (
+          <p className="text-sm font-medium text-zinc-500">Aeris is reading the run history...</p>
+        ) : null}
+
+        {error ? <p className="text-sm font-medium text-red-700">{error}</p> : null}
+      </div>
 
       <ChatInput
         disabled={status === "streaming"}
@@ -129,10 +145,11 @@ function StarterPromptButtons({
   onSelect(prompt: string): void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div aria-label="Starter prompts" className="flex flex-wrap gap-2">
       {STARTER_PROMPTS.map((prompt) => (
         <button
-          className="border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-800 transition hover:border-zinc-950 disabled:cursor-not-allowed disabled:text-zinc-400"
+          aria-label={`Quick reply: ${prompt}`}
+          className="rounded-full border border-zinc-300 bg-white px-4 py-2 text-left text-sm font-medium leading-5 text-zinc-800 shadow-sm shadow-zinc-200/70 transition hover:border-sky-500 hover:text-zinc-950 disabled:cursor-not-allowed disabled:text-zinc-400"
           disabled={disabled}
           key={prompt}
           type="button"

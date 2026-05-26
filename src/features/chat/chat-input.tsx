@@ -16,17 +16,21 @@ export function ChatInput({ disabled, value, onChange, onSubmit }: ChatInputProp
   }
 
   return (
-    <form className="flex gap-4" onSubmit={handleSubmit}>
+    <form
+      aria-label="Ask Aeris a custom question"
+      className="flex flex-col gap-3 border-t border-zinc-200 bg-white/95 p-4 shadow-[0_-12px_30px_rgba(24,24,27,0.06)] sm:flex-row"
+      onSubmit={handleSubmit}
+    >
       <textarea
         aria-label="Message"
-        className="min-h-12 flex-1 resize-none border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-950 outline-none focus:border-zinc-950"
+        className="min-h-14 flex-1 resize-none border border-zinc-300 bg-white px-4 py-3 text-sm leading-5 text-zinc-950 outline-none transition focus:border-zinc-950 focus:ring-2 focus:ring-sky-100"
         disabled={disabled}
         placeholder="Ask about your running data"
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
       <button
-        className="h-12 bg-zinc-950 px-4 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300"
+        className="h-14 shrink-0 bg-zinc-950 px-5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-300 sm:w-24"
         disabled={disabled || value.trim() === ""}
         type="submit"
       >
