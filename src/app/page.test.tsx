@@ -18,12 +18,14 @@ describe("Home", () => {
 
     render(<Home />);
 
-    const header = screen.getByRole("banner");
     const logo = screen.getByRole("img", { name: "Aeris logo" });
     const productName = screen.getByText("Aeris");
+    const header = screen.getByRole("heading", { name: "Running analytics" }).closest("header");
 
-    expect(header.contains(logo)).toBe(true);
-    expect(header.contains(productName)).toBe(true);
-    expect(logo.compareDocumentPosition(productName)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(header?.contains(logo)).toBe(true);
+    expect(header?.contains(productName)).toBe(true);
+    expect(
+      logo.compareDocumentPosition(productName) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });
