@@ -35,8 +35,9 @@ export function formatPace(totalSeconds: number | null): string {
     return "--";
   }
 
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = Math.round(totalSeconds % 60);
+  const rounded = Math.round(totalSeconds);
+  const minutes = Math.floor(rounded / 60);
+  const seconds = rounded % 60;
   return `${minutes}:${seconds.toString().padStart(2, "0")} /km`;
 }
 

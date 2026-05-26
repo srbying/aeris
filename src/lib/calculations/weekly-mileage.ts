@@ -18,7 +18,7 @@ export function calculateWeeklyMileage(
   options: WeeklyMileageOptions = {},
 ): WeeklyMileagePoint[] {
   const now = options.now ?? new Date();
-  const weekCount = options.weeks ?? DEFAULT_WEEK_COUNT;
+  const weekCount = normalizeWeekCount(options.weeks);
   const firstWeekStart = addDays(startOfIsoWeek(now), -(weekCount - 1) * 7);
   const totals = new Map<string, number>();
 
@@ -41,6 +41,16 @@ export function calculateWeeklyMileage(
   }
 
   return Array.from(totals, ([weekStart, distanceKm]) => ({ weekStart, distanceKm }));
+}
+
+function normalizeWeekCount(value: number | undefined): number {
+  const weekCount = Number(value ?? DEFAULT_WEEK_COUNT);
+
+  if (!Number.isFinite(weekCount) || weekCount <= 0) {
+    return DEFAULT_WEEK_COUNT;
+  }
+
+  return Math.floor(weekCount);
 }
 
 function startOfIsoWeek(date: Date): Date {

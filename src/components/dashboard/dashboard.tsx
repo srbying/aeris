@@ -30,6 +30,7 @@ const publicActivitySchema = activityInputSchema.extend({
 });
 
 const publicActivitiesSchema = z.array(publicActivitySchema);
+const DASHBOARD_FETCH_TIMEOUT_MS = 3_000;
 
 export function Dashboard({ refreshKey = 0 }: DashboardProps = {}) {
   const [activities, setActivities] = useState<PublicActivity[]>([]);
@@ -146,7 +147,24 @@ export function Dashboard({ refreshKey = 0 }: DashboardProps = {}) {
 }
 
 async function fetchActivities(): Promise<PublicActivity[]> {
-  const response = await fetch("/api/activities");
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+  }, DASHBOARD_FETCH_TIMEOUT_MS);
+
+  let response: Response;
+
+  try {
+    response = await fetch("/api/activities", { signal: controller.signal });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new Error("Dashboard activity request timed out.");
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     throw new Error("Unable to load dashboard data.");
@@ -154,4 +172,8 @@ async function fetchActivities(): Promise<PublicActivity[]> {
 
   const body: unknown = await response.json();
   return publicActivitiesSchema.parse(body);
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
 }

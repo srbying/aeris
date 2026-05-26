@@ -6,6 +6,7 @@ import type { PublicActivity } from "../../src/lib/activity/types";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 function activity(overrides: Partial<PublicActivity> = {}): PublicActivity {
@@ -63,6 +64,46 @@ describe("Dashboard", () => {
       expect(screen.getByText("Upload Garmin data to see dashboard trends.")).toBeTruthy();
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a retryable error when activities request times out", async () => {
+    const originalSetTimeout = globalThis.setTimeout;
+    let dashboardTimeout: (() => void) | undefined;
+
+    vi.spyOn(globalThis, "setTimeout").mockImplementation(
+      (handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+        if (timeout === 3_000 && typeof handler === "function") {
+          dashboardTimeout = () => {
+            handler(...args);
+          };
+
+          return 1 as ReturnType<typeof setTimeout>;
+        }
+
+        return originalSetTimeout(handler, timeout, ...args);
+      },
+    );
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((_input, init?: RequestInit) => {
+      const signal = init?.signal;
+
+      return new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        });
+      });
+    });
+
+    render(<Dashboard />);
+
+    await waitFor(() => {
+      expect(dashboardTimeout).toBeDefined();
+    });
+    dashboardTimeout?.();
+
+    await waitFor(() => {
+      expect(screen.getByText("Unable to load dashboard data.")).toBeTruthy();
+    });
   });
 
   it("renders coherent empty states when no activities exist", async () => {

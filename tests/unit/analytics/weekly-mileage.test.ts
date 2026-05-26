@@ -50,4 +50,27 @@ describe("calculateWeeklyMileage", () => {
       { weekStart: "2026-05-25", distanceKm: 3 },
     ]);
   });
+
+  it("falls back to the default week count when weeks is not positive", () => {
+    const weeklyMileage = calculateWeeklyMileage([], {
+      now: new Date("2026-05-25T12:00:00.000Z"),
+      weeks: 0,
+    });
+
+    expect(weeklyMileage).toHaveLength(16);
+    expect(weeklyMileage.at(0)).toEqual({ weekStart: "2026-02-09", distanceKm: 0 });
+    expect(weeklyMileage.at(-1)).toEqual({ weekStart: "2026-05-25", distanceKm: 0 });
+  });
+
+  it("floors fractional week counts before building week buckets", () => {
+    const weeklyMileage = calculateWeeklyMileage([], {
+      now: new Date("2026-05-25T12:00:00.000Z"),
+      weeks: 2.8,
+    });
+
+    expect(weeklyMileage).toEqual([
+      { weekStart: "2026-05-18", distanceKm: 0 },
+      { weekStart: "2026-05-25", distanceKm: 0 },
+    ]);
+  });
 });

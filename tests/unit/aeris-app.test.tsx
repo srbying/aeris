@@ -8,6 +8,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function getFileInput(container: HTMLElement): HTMLInputElement {
+  const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]');
+
+  if (!fileInput) {
+    throw new Error("file input not found");
+  }
+
+  return fileInput;
+}
+
 function activity(overrides: Partial<PublicActivity> = {}): PublicActivity {
   return {
     id: "activity-1",
@@ -49,8 +59,8 @@ describe("AerisApp", () => {
       expect(screen.getByText("Upload Garmin data to see dashboard trends.")).toBeTruthy();
     });
 
-    const fileInput = container.querySelector('input[type="file"]');
-    fireEvent.change(fileInput as HTMLInputElement, {
+    const fileInput = getFileInput(container);
+    fireEvent.change(fileInput, {
       target: {
         files: [new File(["Activity Type,Date\nRunning,2026-05-17"], "garmin.csv")],
       },
