@@ -7,6 +7,7 @@ import {
 } from "../../../lib/llm/dependencies";
 import { buildAerisSystemPrompt } from "../../../lib/llm/prompts";
 import type { LLMMessage } from "../../../lib/llm/types";
+import { resolveDisplayUnitSystem } from "../../../lib/measurements/formatters";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -45,9 +46,14 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const repository = getChatActivityRepository();
+    const unitSystem = resolveDisplayUnitSystem({
+      currentMessage: parsedRequest.data.message,
+      history: parsedRequest.data.history,
+    });
     const context = await buildChatContext({
       repository,
       question: parsedRequest.data.message,
+      unitSystem,
     });
 
     if (context.activityCount === 0) {

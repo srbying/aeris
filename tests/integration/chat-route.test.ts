@@ -377,4 +377,40 @@ describe("POST /api/chat", () => {
     expect(systemMessage?.content).toContain('"dur":231');
     expect(systemMessage?.content).toContain("average pace was slower");
   });
+
+  it("injects metric display fields when the latest user wording asks for metric units", async () => {
+    let capturedMessages: LLMMessage[] = [];
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream(request: LLMStreamRequest) {
+        capturedMessages = request.messages;
+        return ["Metric answer."];
+      },
+    };
+
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Show this in kilometers and min/km.",
+        history: [{ role: "user", content: "Use miles and feet by default." }],
+      }),
+    );
+    await readStream(response);
+    const systemMessage = capturedMessages.find((message) => message.role === "system");
+
+    expect(response.status).toBe(200);
+    expect(systemMessage?.content).toContain("Default display unit system: metric");
+    expect(systemMessage?.content).toContain('"paceText":"6:00 /km"');
+    expect(systemMessage?.content).toContain('"distText":"10.0 km"');
+    expect(systemMessage?.content).toContain('"ascText":"40 m"');
+  });
 });

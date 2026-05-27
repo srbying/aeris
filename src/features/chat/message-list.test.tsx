@@ -67,4 +67,44 @@ describe("MessageList", () => {
     expect(container.querySelector("strong")).toBeNull();
     expect(screen.getByText("You are **getting faster")).toBeTruthy();
   });
+
+  it("renders assistant emphasis and inline code as light Markdown", () => {
+    const { container } = render(
+      <MessageList
+        messages={[
+          {
+            id: "assistant-1",
+            role: "assistant",
+            content: "This is *directionally yes* with `paceText` evidence.",
+          },
+        ]}
+      />,
+    );
+
+    const emphasis = screen.getByText("directionally yes");
+    expect(emphasis.tagName).toBe("EM");
+
+    const code = screen.getByText("paceText");
+    expect(code.tagName).toBe("CODE");
+    expect(container.textContent).not.toContain("*directionally yes*");
+    expect(container.textContent).not.toContain("`paceText`");
+  });
+
+  it("leaves unmatched assistant emphasis and code markers literal", () => {
+    const { container } = render(
+      <MessageList
+        messages={[
+          {
+            id: "assistant-1",
+            role: "assistant",
+            content: "Use *partial emphasis and `partial code while streaming",
+          },
+        ]}
+      />,
+    );
+
+    expect(container.querySelector("em")).toBeNull();
+    expect(container.querySelector("code")).toBeNull();
+    expect(screen.getByText("Use *partial emphasis and `partial code while streaming")).toBeTruthy();
+  });
 });

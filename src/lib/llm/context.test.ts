@@ -49,10 +49,53 @@ describe("chat context serialization", () => {
     );
 
     expect(serialized).toEqual([
-      { d: "2026-05-01", pace: 360, hr: 145, dist: 10, dur: 3600, asc: 40, vo2: 49 },
-      { d: "2026-05-03", pace: 360, hr: 145, dist: 10, dur: 3600, asc: 40, vo2: 49 },
+      {
+        d: "2026-05-01",
+        pace: 360,
+        paceText: "9:39 /mi",
+        hr: 145,
+        dist: 10,
+        distText: "6.2 mi",
+        dur: 3600,
+        durText: "1:00:00",
+        asc: 40,
+        ascText: "131 ft",
+        vo2: 49,
+      },
+      {
+        d: "2026-05-03",
+        pace: 360,
+        paceText: "9:39 /mi",
+        hr: 145,
+        dist: 10,
+        distText: "6.2 mi",
+        dur: 3600,
+        durText: "1:00:00",
+        asc: 40,
+        ascText: "131 ft",
+        vo2: 49,
+      },
     ]);
     expect(JSON.stringify(serialized)).not.toContain("activityDate");
+  });
+
+  it("serializes display fields in metric when requested", () => {
+    const serialized = serializeActivitiesForPrompt([activity()], {
+      months: 12,
+      now,
+      unitSystem: "metric",
+    });
+
+    expect(serialized[0]).toEqual(
+      expect.objectContaining({
+        pace: 360,
+        paceText: "6:00 /km",
+        dist: 10,
+        distText: "10.0 km",
+        asc: 40,
+        ascText: "40 m",
+      }),
+    );
   });
 
   it("adds selected Garmin raw fields to compact prompt context when present", () => {
@@ -73,10 +116,14 @@ describe("chat context serialization", () => {
       {
         d: "2026-05-01",
         pace: 360,
+        paceText: "9:39 /mi",
         hr: 145,
         dist: 10,
+        distText: "6.2 mi",
         dur: 3600,
+        durText: "1:00:00",
         asc: 40,
+        ascText: "131 ft",
         vo2: 49,
         title: "Avon Lake - W03D7-Long Run",
         moving: 4801,
@@ -107,7 +154,19 @@ describe("chat context serialization", () => {
     expect(getRecentActivities).toHaveBeenCalledWith({ months: 6, now });
     expect(context.contextWindowMonths).toBe(6);
     expect(context.activities).toEqual([
-      { d: "2026-05-21", pace: 360, hr: 145, dist: 10, dur: 3600, asc: 40, vo2: 49 },
+      {
+        d: "2026-05-21",
+        pace: 360,
+        paceText: "9:39 /mi",
+        hr: 145,
+        dist: 10,
+        distText: "6.2 mi",
+        dur: 3600,
+        durText: "1:00:00",
+        asc: 40,
+        ascText: "131 ft",
+        vo2: 49,
+      },
     ]);
   });
 
@@ -143,13 +202,46 @@ describe("chat context serialization", () => {
     });
 
     expect(context.dateComparisonFacts).toEqual({
-      focus: { d: "2026-05-17", dist: 17.87, dur: 4804, pace: 269, hr: 148, asc: 27 },
-      baseline: { d: "2026-05-09", dist: 18.13, dur: 4573, pace: 252, hr: 146, asc: 21 },
+      focus: {
+        d: "2026-05-17",
+        dist: 17.87,
+        distText: "11.1 mi",
+        dur: 4804,
+        durText: "1:20:04",
+        pace: 269,
+        paceText: "7:13 /mi",
+        hr: 148,
+        hrText: "148 bpm",
+        asc: 27,
+        ascText: "89 ft",
+      },
+      baseline: {
+        d: "2026-05-09",
+        dist: 18.13,
+        distText: "11.3 mi",
+        dur: 4573,
+        durText: "1:16:13",
+        pace: 252,
+        paceText: "6:46 /mi",
+        hr: 146,
+        hrText: "146 bpm",
+        asc: 21,
+        ascText: "69 ft",
+      },
       delta: { dist: -0.26, dur: 231, pace: 17, hr: 2, asc: 6 },
+      deltaText: {
+        dist: "-0.2 mi",
+        dur: "+3:51",
+        pace: "+0:27 /mi",
+        hr: "+2 bpm",
+        asc: "+20 ft",
+      },
       explanationHint:
         "2026-05-17 took longer despite less distance because average pace was slower.",
     });
     expect(context.dateComparisonFactsJson).toContain('"dur":4804');
+    expect(context.dateComparisonFactsJson).toContain('"durText":"1:20:04"');
+    expect(context.dateComparisonFactsJson).toContain('"paceText":"7:13 /mi"');
   });
 
   it.each([
@@ -233,6 +325,10 @@ describe("chat context serialization", () => {
     expect(context.efficiency.current30d).toBeCloseTo(0.0222, 4);
     expect(context.efficiency.previous90d).toBeCloseTo(0.02, 4);
     expect(context.efficiency.previous180d).toBeCloseTo(0.0178, 4);
+    expect(context.efficiencyDisplay).toEqual({
+      currentVsPrevious90d: "+11.0% speed per heartbeat",
+      currentVsPrevious180d: "+24.7% speed per heartbeat",
+    });
   });
 });
 
@@ -241,16 +337,72 @@ describe("Aeris prompt builder", () => {
     const prompt = buildAerisSystemPrompt({
       contextWindowMonths: 12,
       activityCount: 1,
+      displayUnitSystem: "imperial",
       activities: [
-        { d: "2026-05-01", pace: 360, hr: 145, dist: 10, dur: 3600, asc: 40, vo2: 49 },
+        {
+          d: "2026-05-01",
+          pace: 360,
+          paceText: "9:39 /mi",
+          hr: 145,
+          dist: 10,
+          distText: "6.2 mi",
+          dur: 3600,
+          durText: "1:00:00",
+          asc: 40,
+          ascText: "131 ft",
+          vo2: 49,
+        },
       ],
       activitiesJson: JSON.stringify([
-        { d: "2026-05-01", pace: 360, hr: 145, dist: 10, dur: 3600, asc: 40, vo2: 49 },
+        {
+          d: "2026-05-01",
+          pace: 360,
+          paceText: "9:39 /mi",
+          hr: 145,
+          dist: 10,
+          distText: "6.2 mi",
+          dur: 3600,
+          durText: "1:00:00",
+          asc: 40,
+          ascText: "131 ft",
+          vo2: 49,
+        },
       ]),
       dateComparisonFacts: {
-        focus: { d: "2026-05-17", dist: 17.87, dur: 4804, pace: 269, hr: 148, asc: 27 },
-        baseline: { d: "2026-05-09", dist: 18.13, dur: 4573, pace: 252, hr: 146, asc: 21 },
+        focus: {
+          d: "2026-05-17",
+          dist: 17.87,
+          distText: "11.1 mi",
+          dur: 4804,
+          durText: "1:20:04",
+          pace: 269,
+          paceText: "7:13 /mi",
+          hr: 148,
+          hrText: "148 bpm",
+          asc: 27,
+          ascText: "89 ft",
+        },
+        baseline: {
+          d: "2026-05-09",
+          dist: 18.13,
+          distText: "11.3 mi",
+          dur: 4573,
+          durText: "1:16:13",
+          pace: 252,
+          paceText: "6:46 /mi",
+          hr: 146,
+          hrText: "146 bpm",
+          asc: 21,
+          ascText: "69 ft",
+        },
         delta: { dist: -0.26, dur: 231, pace: 17, hr: 2, asc: 6 },
+        deltaText: {
+          dist: "-0.2 mi",
+          dur: "+3:51",
+          pace: "+0:27 /mi",
+          hr: "+2 bpm",
+          asc: "+20 ft",
+        },
         explanationHint:
           "2026-05-17 took longer despite less distance because average pace was slower.",
       },
@@ -258,6 +410,13 @@ describe("Aeris prompt builder", () => {
         focus: { d: "2026-05-17", dist: 17.87, dur: 4804, pace: 269, hr: 148, asc: 27 },
         baseline: { d: "2026-05-09", dist: 18.13, dur: 4573, pace: 252, hr: 146, asc: 21 },
         delta: { dist: -0.26, dur: 231, pace: 17, hr: 2, asc: 6 },
+        deltaText: {
+          dist: "-0.2 mi",
+          dur: "+3:51",
+          pace: "+0:27 /mi",
+          hr: "+2 bpm",
+          asc: "+20 ft",
+        },
         explanationHint:
           "2026-05-17 took longer despite less distance because average pace was slower.",
       }),
@@ -265,6 +424,10 @@ describe("Aeris prompt builder", () => {
         current30d: 0.0222,
         previous90d: 0.02,
         previous180d: null,
+      },
+      efficiencyDisplay: {
+        currentVsPrevious90d: "+11.0% speed per heartbeat",
+        currentVsPrevious180d: null,
       },
     });
 
@@ -276,8 +439,20 @@ describe("Aeris prompt builder", () => {
     expect(prompt).toContain("Do not provide coaching recommendations");
     expect(prompt).toContain("Do not create training plans");
     expect(prompt).toContain('"d":"2026-05-01"');
+    expect(prompt).toContain('"paceText":"9:39 /mi"');
     expect(prompt).toContain("Date comparison facts compact JSON");
     expect(prompt).toContain("longer despite less distance");
     expect(prompt).toContain("0.0222");
+    expect(prompt).toContain("Default display unit system: imperial");
+    expect(prompt).toContain("verdict first");
+    expect(prompt).toContain("meaning before raw formulas");
+    expect(prompt).toContain("light chat Markdown");
+    expect(prompt).toContain("Do not show raw aerobic efficiency decimals by default");
+    expect(prompt).toContain("Use similar heart rate, not same effort");
+    expect(prompt).toContain("pretty clear");
+    expect(prompt).toContain("directionally yes");
+    expect(prompt).toContain("mixed");
+    expect(prompt).toContain("too noisy to call");
+    expect(prompt).toContain("No tables unless the user asks");
   });
 });
