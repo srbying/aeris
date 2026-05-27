@@ -46,8 +46,8 @@ function jsonResponse(body: unknown): Response {
 }
 
 describe("AerisApp", () => {
-  it("presents chat as the primary workspace with chart-backed supporting evidence second", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+  it("stacks chat, evidence tabs, the default history panel, and hidden optional panels", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([activity()]));
 
     render(<AerisApp />);
 
@@ -59,30 +59,64 @@ describe("AerisApp", () => {
     const supportingEvidence = screen.getByRole("complementary", {
       name: /supporting evidence/i,
     });
+    const evidenceTabs = screen.getByRole("tablist", { name: "Supporting evidence sections" });
 
     expect(primaryWorkspace.compareDocumentPosition(supportingEvidence)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+    expect(primaryWorkspace.className).toContain("max-w-[900px]");
+    expect(primaryWorkspace.className).toContain("min-h-[280px]");
+    expect(primaryWorkspace.className).toContain("h-[40vh]");
+    expect(supportingEvidence.contains(evidenceTabs)).toBe(true);
     expect(primaryWorkspace.textContent).toContain("Aeris chat");
     expect(
-      within(supportingEvidence).getByRole("heading", { name: "Supporting evidence" }),
-    ).toBeTruthy();
+      within(evidenceTabs)
+        .getByRole("tab", { name: "Activity history" })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
     expect(
-      within(supportingEvidence).getByRole("heading", { name: "Pace vs heart rate" }),
-    ).toBeTruthy();
+      within(evidenceTabs)
+        .getByRole("tab", { name: "Trend evidence" })
+        .getAttribute("aria-selected"),
+    ).toBe("false");
     expect(
-      within(supportingEvidence).getByRole("heading", { name: "Aerobic efficiency" }),
-    ).toBeTruthy();
-    expect(within(supportingEvidence).getByRole("heading", { name: "VO2 max" })).toBeTruthy();
-    expect(
-      within(supportingEvidence).getByRole("heading", { name: "Weekly mileage" }),
-    ).toBeTruthy();
+      within(evidenceTabs)
+        .getByRole("tab", { name: "Import CSV" })
+        .getAttribute("aria-selected"),
+    ).toBe("false");
+    expect(screen.getByRole("tabpanel", { name: "Activity history" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Activity history" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: /import garmin csv/i })).toBeNull();
+    expect(within(supportingEvidence).queryByRole("heading", { name: "Pace vs heart rate" })).toBeNull();
+    expect(within(supportingEvidence).queryByRole("heading", { name: "Aerobic efficiency" })).toBeNull();
+    expect(within(supportingEvidence).queryByRole("heading", { name: "VO2 max" })).toBeNull();
+    expect(within(supportingEvidence).queryByRole("heading", { name: "Weekly mileage" })).toBeNull();
+  });
 
-    const importAction = within(supportingEvidence).getByRole("region", {
-      name: /import garmin csv/i,
+  it("switches from the default activity history tab to trend evidence", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([activity()]));
+
+    render(<AerisApp />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Last 10 uploaded activities.")).toBeTruthy();
     });
 
-    expect(within(importAction).getByRole("button", { name: "Upload CSV" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Activity history" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Pace vs heart rate" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Trend evidence" }));
+
+    expect(screen.getByRole("tab", { name: "Trend evidence" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("region", { name: "Activity history" })).toBeNull();
+
+    const trendsPanel = screen.getByRole("tabpanel", { name: "Trend evidence" });
+    expect(within(trendsPanel).getByRole("heading", { name: "Pace vs heart rate" })).toBeTruthy();
+    expect(within(trendsPanel).getByRole("heading", { name: "Aerobic efficiency" })).toBeTruthy();
+    expect(within(trendsPanel).getByRole("heading", { name: "VO2 max" })).toBeTruthy();
+    expect(within(trendsPanel).getByRole("heading", { name: "Weekly mileage" })).toBeTruthy();
   });
 
   it("refreshes the dashboard after a successful CSV upload without a page reload", async () => {
@@ -95,8 +129,12 @@ describe("AerisApp", () => {
     const { container } = render(<AerisApp />);
 
     await waitFor(() => {
-      expect(screen.getByText("Upload Garmin data to see dashboard trends.")).toBeTruthy();
+      expect(screen.getByText("No activities uploaded yet.")).toBeTruthy();
     });
+    expect(screen.queryByRole("region", { name: /import garmin csv/i })).toBeNull();
+    expect(screen.queryByText("Upload Garmin data to see dashboard trends.")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Import CSV" }));
 
     const fileInput = getFileInput(container);
     fireEvent.change(fileInput, {
@@ -104,10 +142,17 @@ describe("AerisApp", () => {
         files: [new File(["Activity Type,Date\nRunning,2026-05-17"], "garmin.csv")],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+    const importAction = screen.getByRole("region", { name: /import garmin csv/i });
+
+    fireEvent.click(within(importAction).getByRole("button", { name: /upload/i }));
 
     await waitFor(() => {
       expect(screen.getByText("1 runs added, 0 already existed.")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Trend evidence" }));
+
+    await waitFor(() => {
       expect(screen.getByText("Trends from 1 uploaded activities.")).toBeTruthy();
     });
     expect(fetchMock).toHaveBeenCalledTimes(3);

@@ -78,7 +78,7 @@ export function ChatPanel() {
   return (
     <section
       aria-label="Aeris chat window"
-      className="flex min-h-[520px] w-full flex-col overflow-hidden rounded-lg border border-zinc-200/80 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.08)]"
+      className="flex h-full min-h-[280px] w-full flex-col overflow-hidden rounded-lg border border-zinc-200/80 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.08)]"
     >
       <div className="border-b border-zinc-200/80 bg-white px-4 py-4 sm:px-6">
         <div className="flex flex-col gap-1">
@@ -149,11 +149,14 @@ function StarterPromptButtons({
   onSelect(prompt: string): void;
 }) {
   return (
-    <div aria-label="Starter prompts" className="flex flex-wrap gap-2">
+    <div
+      aria-label="Starter prompts"
+      className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
+    >
       {STARTER_PROMPTS.map((prompt) => (
         <button
           aria-label={`Quick reply: ${prompt}`}
-          className="rounded-md border border-zinc-200 bg-white px-4 py-2 text-left text-sm font-medium leading-5 text-zinc-800 shadow-sm shadow-zinc-200/70 transition-[border-color,box-shadow,color] duration-200 hover:border-sky-400 hover:text-zinc-950 hover:shadow-sky-100 focus-visible:border-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:text-zinc-400 motion-reduce:transition-none"
+          className="shrink-0 rounded-md border border-zinc-200 bg-white px-4 py-2 text-left text-sm font-medium leading-5 text-zinc-800 shadow-sm shadow-zinc-200/70 transition-[border-color,box-shadow,color] duration-200 hover:border-sky-400 hover:text-zinc-950 hover:shadow-sky-100 focus-visible:border-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:text-zinc-400 motion-reduce:transition-none"
           disabled={disabled}
           key={prompt}
           type="button"

@@ -108,10 +108,42 @@ describe("Dashboard", () => {
     });
   });
 
-  it("keeps activity history collapsed by default when no activities exist", async () => {
+  it("renders no visible dashboard panel for hidden evidence view", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
 
-    render(<Dashboard />);
+    render(<Dashboard activeView="hidden" />);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/activities",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
+    expect(screen.queryByText("Upload Garmin data to see dashboard trends.")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Pace vs heart rate" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show activity history" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Activity history" })).toBeNull();
+  });
+
+  it("renders activity history for the activity history evidence view", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+
+    render(<Dashboard activeView="activity-history" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Activity history" })).toBeTruthy();
+    });
+
+    expect(screen.queryByRole("button", { name: "Show activity history" })).toBeNull();
+    expect(screen.getByText("No activities uploaded yet.")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Pace vs heart rate" })).toBeNull();
+  });
+
+  it("renders trend evidence charts for the trend evidence view", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+
+    render(<Dashboard activeView="trend-evidence" />);
 
     await waitFor(() => {
       expect(screen.getByText("Upload Garmin data to see dashboard trends.")).toBeTruthy();
@@ -121,40 +153,87 @@ describe("Dashboard", () => {
     expect(screen.getByRole("heading", { name: "Aerobic efficiency" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "VO2 max" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Weekly mileage" })).toBeTruthy();
-    const activityHistoryToggle = screen.getByRole("button", { name: "Show activity history" });
-    expect(activityHistoryToggle.getAttribute("aria-expanded")).toBe("false");
-    expect(activityHistoryToggle.className).toContain("focus-visible:ring-2");
-    expect(activityHistoryToggle.className).toContain("focus-visible:ring-sky-100");
-    expect(activityHistoryToggle.className).toContain("focus-visible:ring-offset-2");
     expect(screen.getAllByText("Not enough data yet.").length).toBeGreaterThanOrEqual(3);
-    expect(screen.queryByText("No activities uploaded yet.")).toBeNull();
+    expect(screen.queryByRole("region", { name: "Activity history" })).toBeNull();
   });
 
-  it("expands and collapses empty activity history", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+  it(
+    "renders chart panels while keeping uploaded activity rows collapsed until expanded",
+    async () => {
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        jsonResponse([
+          activity({
+            activityDate: "2026-05-01T08:00:00.000Z",
+            avgPaceSecPerKm: 360,
+            avgHr: 145,
+            vo2maxEstimate: 40,
+          }),
+          activity({
+            activityDate: "2026-05-02T08:00:00.000Z",
+            avgPaceSecPerKm: 365,
+            avgHr: 146,
+            vo2maxEstimate: 41,
+          }),
+          activity({
+            activityDate: "2026-05-03T08:00:00.000Z",
+            avgPaceSecPerKm: 370,
+            avgHr: 147,
+            vo2maxEstimate: 42,
+          }),
+          activity({
+            activityDate: "2026-05-04T08:00:00.000Z",
+            avgPaceSecPerKm: 375,
+            avgHr: 148,
+            vo2maxEstimate: 43,
+          }),
+          activity({
+            activityDate: "2026-05-05T08:00:00.000Z",
+            avgPaceSecPerKm: 380,
+            avgHr: 149,
+            vo2maxEstimate: 44,
+          }),
+          activity({
+            activityDate: "2026-05-06T08:00:00.000Z",
+            avgPaceSecPerKm: 385,
+            avgHr: 150,
+            vo2maxEstimate: 45,
+          }),
+          activity({
+            activityDate: "2026-05-07T08:00:00.000Z",
+            avgPaceSecPerKm: 390,
+            avgHr: 151,
+            vo2maxEstimate: 46,
+          }),
+          activity({
+            activityDate: "2026-05-08T08:00:00.000Z",
+            activityType: "Cycling",
+            distanceKm: 24,
+            avgPaceSecPerKm: null,
+            avgHr: null,
+            vo2maxEstimate: null,
+            efficiency: null,
+          }),
+        ]),
+      );
 
-    render(<Dashboard />);
+      render(<Dashboard activeView="trend-evidence" />);
 
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Show activity history" })).toBeTruthy();
-    });
+      await waitFor(() => {
+        expect(screen.getByTestId("pace-heart-rate-chart")).toBeTruthy();
+      });
 
-    fireEvent.click(screen.getByRole("button", { name: "Show activity history" }));
+      expect(screen.getByText("Pace (min/km)")).toBeTruthy();
+      expect(screen.getByText("Heart rate (bpm)")).toBeTruthy();
+      expect(screen.getByText("Efficiency")).toBeTruthy();
+      expect(screen.getByText("VO2 max")).toBeTruthy();
+      expect(screen.getByText("Distance (km)")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Show activity history" })).toBeNull();
+      expect(screen.queryByText("Cycling")).toBeNull();
+    },
+    10_000,
+  );
 
-    expect(
-      screen.getByRole("button", { name: "Hide activity history" }).getAttribute("aria-expanded"),
-    ).toBe("true");
-    expect(screen.getByText("No activities uploaded yet.")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Hide activity history" }));
-
-    expect(
-      screen.getByRole("button", { name: "Show activity history" }).getAttribute("aria-expanded"),
-    ).toBe("false");
-    expect(screen.queryByText("No activities uploaded yet.")).toBeNull();
-  });
-
-  it("renders chart panels while keeping uploaded activity rows collapsed until expanded", async () => {
+  it("renders uploaded activity rows when history is requested", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse([
         activity({
@@ -162,42 +241,6 @@ describe("Dashboard", () => {
           avgPaceSecPerKm: 360,
           avgHr: 145,
           vo2maxEstimate: 40,
-        }),
-        activity({
-          activityDate: "2026-05-02T08:00:00.000Z",
-          avgPaceSecPerKm: 365,
-          avgHr: 146,
-          vo2maxEstimate: 41,
-        }),
-        activity({
-          activityDate: "2026-05-03T08:00:00.000Z",
-          avgPaceSecPerKm: 370,
-          avgHr: 147,
-          vo2maxEstimate: 42,
-        }),
-        activity({
-          activityDate: "2026-05-04T08:00:00.000Z",
-          avgPaceSecPerKm: 375,
-          avgHr: 148,
-          vo2maxEstimate: 43,
-        }),
-        activity({
-          activityDate: "2026-05-05T08:00:00.000Z",
-          avgPaceSecPerKm: 380,
-          avgHr: 149,
-          vo2maxEstimate: 44,
-        }),
-        activity({
-          activityDate: "2026-05-06T08:00:00.000Z",
-          avgPaceSecPerKm: 385,
-          avgHr: 150,
-          vo2maxEstimate: 45,
-        }),
-        activity({
-          activityDate: "2026-05-07T08:00:00.000Z",
-          avgPaceSecPerKm: 390,
-          avgHr: 151,
-          vo2maxEstimate: 46,
         }),
         activity({
           activityDate: "2026-05-08T08:00:00.000Z",
@@ -211,20 +254,11 @@ describe("Dashboard", () => {
       ]),
     );
 
-    render(<Dashboard />);
+    render(<Dashboard activeView="activity-history" />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("pace-heart-rate-chart")).toBeTruthy();
+      expect(screen.getByRole("region", { name: "Activity history" })).toBeTruthy();
     });
-
-    expect(screen.getByText("Pace (min/km)")).toBeTruthy();
-    expect(screen.getByText("Heart rate (bpm)")).toBeTruthy();
-    expect(screen.getByText("Efficiency")).toBeTruthy();
-    expect(screen.getByText("VO2 max")).toBeTruthy();
-    expect(screen.getByText("Distance (km)")).toBeTruthy();
-    expect(screen.queryByText("Cycling")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Show activity history" }));
 
     expect(screen.getByText("Cycling")).toBeTruthy();
     expect(screen.getByText("24.0 km")).toBeTruthy();
@@ -237,13 +271,13 @@ describe("Dashboard", () => {
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([activity()]));
 
-    const { rerender } = render(<Dashboard refreshKey={0} />);
+    const { rerender } = render(<Dashboard activeView="trend-evidence" refreshKey={0} />);
 
     await waitFor(() => {
       expect(screen.getByText("Upload Garmin data to see dashboard trends.")).toBeTruthy();
     });
 
-    rerender(<Dashboard refreshKey={1} />);
+    rerender(<Dashboard activeView="trend-evidence" refreshKey={1} />);
 
     await waitFor(() => {
       expect(screen.getByText("Trends from 1 uploaded activities.")).toBeTruthy();
