@@ -66,7 +66,7 @@ describe("AerisApp", () => {
     );
     expect(primaryWorkspace.className).toContain("max-w-[900px]");
     expect(primaryWorkspace.className).toContain("min-h-[280px]");
-    expect(primaryWorkspace.className).toContain("h-[40vh]");
+    expect(primaryWorkspace.className).toContain("h-[60vh]");
     expect(supportingEvidence.contains(evidenceTabs)).toBe(true);
     expect(primaryWorkspace.textContent).toContain("Aeris chat");
     expect(
