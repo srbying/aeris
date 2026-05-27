@@ -28,9 +28,9 @@ export function EfficiencyTrendChart({ trend }: EfficiencyTrendChartProps) {
       {!trend.hasEnoughData ? (
         <EmptyPanel />
       ) : (
-        <div>
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-4 text-xs font-medium text-zinc-600">Efficiency</div>
-          <div className="h-64 min-w-0" data-testid="efficiency-trend-chart">
+          <div className="min-h-0 min-w-0 flex-1" data-testid="efficiency-trend-chart">
             <ResponsiveContainer
               height="100%"
               initialDimension={{ width: 600, height: 256 }}

@@ -20,7 +20,9 @@ import { WeeklyMileageChart } from "./weekly-mileage-chart";
 type DashboardStatus = "loading" | "ready" | "error";
 
 type DashboardProps = {
+  historyPanelId?: string;
   refreshKey?: number;
+  showActivityHistory?: boolean;
 };
 
 const publicActivitySchema = activityInputSchema.extend({
@@ -32,7 +34,11 @@ const publicActivitySchema = activityInputSchema.extend({
 const publicActivitiesSchema = z.array(publicActivitySchema);
 const DASHBOARD_FETCH_TIMEOUT_MS = 3_000;
 
-export function Dashboard({ refreshKey = 0 }: DashboardProps = {}) {
+export function Dashboard({
+  historyPanelId,
+  refreshKey = 0,
+  showActivityHistory = false,
+}: DashboardProps = {}) {
   const [activities, setActivities] = useState<PublicActivity[]>([]);
   const [status, setStatus] = useState<DashboardStatus>("loading");
 
@@ -129,7 +135,14 @@ export function Dashboard({ refreshKey = 0 }: DashboardProps = {}) {
         )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      {showActivityHistory ? (
+        <ActivityHistory activities={dashboardData.recentActivities} id={historyPanelId} />
+      ) : null}
+
+      <div
+        className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] lg:grid-cols-[repeat(auto-fit,minmax(220px,1fr))]"
+        data-testid="chart-grid"
+      >
         <PaceHeartRateChart data={dashboardData.paceTrend} />
         <EfficiencyTrendChart trend={dashboardData.efficiencyTrend} />
         <Vo2TrendChart trend={dashboardData.vo2Trend} />
@@ -138,8 +151,6 @@ export function Dashboard({ refreshKey = 0 }: DashboardProps = {}) {
           hasActivities={activities.length > 0}
         />
       </div>
-
-      <ActivityHistory activities={dashboardData.recentActivities} />
     </section>
   );
 }

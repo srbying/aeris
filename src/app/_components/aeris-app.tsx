@@ -5,8 +5,11 @@ import { SupportingEvidence } from "../../features/evidence/supporting-evidence"
 
 export function AerisApp() {
   return (
-    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(480px,0.95fr)]">
-      <section aria-label="Aeris conversation" className="min-w-0">
+    <div className="flex flex-col gap-6">
+      <section
+        aria-label="Aeris conversation"
+        className="mx-auto flex h-[40vh] min-h-[280px] w-full max-w-[900px] flex-col"
+      >
         <ChatPanel />
       </section>
 

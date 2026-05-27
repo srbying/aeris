@@ -24,9 +24,9 @@ export function WeeklyMileageChart({ data, hasActivities }: WeeklyMileageChartPr
       {!hasActivities ? (
         <EmptyPanel message="No mileage data yet." />
       ) : (
-        <div>
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-4 text-xs font-medium text-zinc-600">Distance (km)</div>
-          <div className="h-64 min-w-0" data-testid="weekly-mileage-chart">
+          <div className="min-h-0 min-w-0 flex-1" data-testid="weekly-mileage-chart">
             <ResponsiveContainer
               height="100%"
               initialDimension={{ width: 600, height: 256 }}

@@ -46,7 +46,7 @@ function jsonResponse(body: unknown): Response {
 }
 
 describe("AerisApp", () => {
-  it("presents chat as the primary workspace with chart-backed supporting evidence second", async () => {
+  it("stacks chat, utilities, optional panels, and charts in the primary flow", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
 
     render(<AerisApp />);
@@ -59,14 +59,22 @@ describe("AerisApp", () => {
     const supportingEvidence = screen.getByRole("complementary", {
       name: /supporting evidence/i,
     });
+    const utilityBar = screen.getByRole("toolbar", { name: "Aeris utilities" });
 
     expect(primaryWorkspace.compareDocumentPosition(supportingEvidence)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+    expect(primaryWorkspace.className).toContain("max-w-[900px]");
+    expect(primaryWorkspace.className).toContain("min-h-[280px]");
+    expect(primaryWorkspace.className).toContain("h-[40vh]");
+    expect(supportingEvidence.contains(utilityBar)).toBe(true);
     expect(primaryWorkspace.textContent).toContain("Aeris chat");
     expect(
-      within(supportingEvidence).getByRole("heading", { name: "Supporting evidence" }),
+      within(utilityBar).getByRole("button", { name: "Activity history" }),
     ).toBeTruthy();
+    expect(within(utilityBar).getByRole("button", { name: "Import CSV" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Activity history" })).toBeNull();
+    expect(screen.queryByRole("region", { name: /import garmin csv/i })).toBeNull();
     expect(
       within(supportingEvidence).getByRole("heading", { name: "Pace vs heart rate" }),
     ).toBeTruthy();
@@ -77,12 +85,27 @@ describe("AerisApp", () => {
     expect(
       within(supportingEvidence).getByRole("heading", { name: "Weekly mileage" }),
     ).toBeTruthy();
+  });
 
-    const importAction = within(supportingEvidence).getByRole("region", {
-      name: /import garmin csv/i,
+  it("opens activity history from the utility bar", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([activity()]));
+
+    render(<AerisApp />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Trends from 1 uploaded activities.")).toBeTruthy();
     });
 
-    expect(within(importAction).getByRole("button", { name: "Upload CSV" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Activity history" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Activity history" }));
+
+    const activityHistory = screen.getByRole("region", { name: "Activity history" });
+
+    expect(within(activityHistory).getByText("Last 10 uploaded activities.")).toBeTruthy();
+    expect(
+      within(activityHistory).getByRole("cell", { name: "10.0 km" }),
+    ).toBeTruthy();
   });
 
   it("refreshes the dashboard after a successful CSV upload without a page reload", async () => {
@@ -97,6 +120,9 @@ describe("AerisApp", () => {
     await waitFor(() => {
       expect(screen.getByText("Upload Garmin data to see dashboard trends.")).toBeTruthy();
     });
+    expect(screen.queryByRole("region", { name: /import garmin csv/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Import CSV" }));
 
     const fileInput = getFileInput(container);
     fireEvent.change(fileInput, {
@@ -104,7 +130,9 @@ describe("AerisApp", () => {
         files: [new File(["Activity Type,Date\nRunning,2026-05-17"], "garmin.csv")],
       },
     });
-    fireEvent.click(screen.getByRole("button", { name: /upload/i }));
+    const importAction = screen.getByRole("region", { name: /import garmin csv/i });
+
+    fireEvent.click(within(importAction).getByRole("button", { name: /upload/i }));
 
     await waitFor(() => {
       expect(screen.getByText("1 runs added, 0 already existed.")).toBeTruthy();

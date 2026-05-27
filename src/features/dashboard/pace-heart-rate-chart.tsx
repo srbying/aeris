@@ -27,12 +27,12 @@ export function PaceHeartRateChart({ data }: PaceHeartRateChartProps) {
       {data.length < 2 ? (
         <EmptyPanel />
       ) : (
-        <div>
+        <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-medium text-zinc-600">
             <span>Pace (min/km)</span>
             <span>Heart rate (bpm)</span>
           </div>
-          <div className="h-64 min-w-0" data-testid="pace-heart-rate-chart">
+          <div className="min-h-0 min-w-0 flex-1" data-testid="pace-heart-rate-chart">
             <ResponsiveContainer
               height="100%"
               initialDimension={{ width: 600, height: 256 }}

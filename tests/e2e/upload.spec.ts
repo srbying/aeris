@@ -7,6 +7,7 @@ test("uploads Garmin CSV and reports duplicates on re-upload", async ({ page }) 
 
   await page.goto("/");
 
+  await page.getByRole("button", { name: "Import CSV" }).click();
   await page.locator('input[type="file"]').setInputFiles(garminSmallCsvPath);
   await page.getByRole("button", { name: "Upload CSV" }).click();
 
