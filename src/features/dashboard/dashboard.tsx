@@ -11,9 +11,9 @@ import {
   getRecentActivities,
 } from "../../lib/calculations/dashboard";
 import { calculateWeeklyMileage } from "../../lib/calculations/weekly-mileage";
+import { ActivityHistory } from "./activity-history";
 import { EfficiencyTrendChart } from "./efficiency-trend-chart";
 import { PaceHeartRateChart } from "./pace-heart-rate-chart";
-import { RecentRunsTable } from "./recent-runs-table";
 import { Vo2TrendChart } from "./vo2-trend-chart";
 import { WeeklyMileageChart } from "./weekly-mileage-chart";
 
@@ -139,7 +139,7 @@ export function Dashboard({ refreshKey = 0 }: DashboardProps = {}) {
         />
       </div>
 
-      <RecentRunsTable activities={dashboardData.recentActivities} />
+      <ActivityHistory activities={dashboardData.recentActivities} />
     </section>
   );
 }
