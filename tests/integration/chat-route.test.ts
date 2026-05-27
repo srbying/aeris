@@ -461,6 +461,109 @@ describe("POST /api/chat", () => {
     expect(systemMessage?.content).toContain("Do not create training plans");
   });
 
+  it("injects raw-number drilldown context for follow-up requests", async () => {
+    let capturedMessages: LLMMessage[] = [];
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream(request: LLMStreamRequest) {
+        capturedMessages = request.messages;
+        return ["Here are the raw numbers."];
+      },
+    };
+
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Show raw numbers, including raw aerobic efficiency.",
+        history: [
+          { role: "user", content: "Am I getting faster at the same heart rate?" },
+          { role: "assistant", content: "**Directionally yes.** Recent similar-HR runs are faster." },
+        ],
+      }),
+    );
+    await readStream(response);
+    const systemMessage = capturedMessages.find((message) => message.role === "system");
+
+    expect(response.status).toBe(200);
+    expect(capturedMessages.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(systemMessage?.content).toContain("Raw-number drilldown requested: true");
+    expect(systemMessage?.content).toContain('"eff":0.0192');
+    expect(systemMessage?.content).toContain("Show raw efficiency numbers");
+  });
+
+  it("injects older-run drilldown context for reference follow-ups", async () => {
+    let capturedMessages: LLMMessage[] = [];
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream(request: LLMStreamRequest) {
+        capturedMessages = request.messages;
+        return ["The older references were February 10 and February 20."];
+      },
+    };
+
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([
+          activity({
+            id: "older-1",
+            activityDate: "2026-02-10T08:00:00.000Z",
+            distanceKm: 10,
+            durationSeconds: 3600,
+            avgPaceSecPerKm: 360,
+            avgHr: 145,
+          }),
+          activity({
+            id: "recent-1",
+            activityDate: "2026-05-20T08:00:00.000Z",
+            distanceKm: 10,
+            durationSeconds: 3180,
+            avgPaceSecPerKm: 318,
+            avgHr: 146,
+          }),
+        ]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Which older runs were behind that?",
+        history: [
+          { role: "user", content: "Am I getting faster at the same heart rate?" },
+          {
+            role: "assistant",
+            content: "Recent similar-HR runs look faster than older February references.",
+          },
+        ],
+      }),
+    );
+    await readStream(response);
+    const systemMessage = capturedMessages.find((message) => message.role === "system");
+
+    expect(response.status).toBe(200);
+    expect(systemMessage?.content).toContain("Older-run reference drilldown requested: true");
+    expect(systemMessage?.content).toContain("resolve short follow-ups");
+    expect(systemMessage?.content).toContain('"d":"2026-02-10"');
+    expect(systemMessage?.content).toContain('"d":"2026-05-20"');
+  });
+
   it("injects metric display fields when the latest user wording asks for metric units", async () => {
     let capturedMessages: LLMMessage[] = [];
     const provider = {

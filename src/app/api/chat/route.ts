@@ -53,6 +53,7 @@ export async function POST(request: Request): Promise<Response> {
     const context = await buildChatContext({
       repository,
       question: parsedRequest.data.message,
+      history: parsedRequest.data.history,
       unitSystem,
     });
 

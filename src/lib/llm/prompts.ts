@@ -1,6 +1,6 @@
 import type { ChatContext } from "./context";
 
-export const PROMPT_VERSION = "v1.2";
+export const PROMPT_VERSION = "v1.3";
 
 export function buildAerisSystemPrompt(context: ChatContext): string {
   return [
@@ -14,6 +14,12 @@ export function buildAerisSystemPrompt(context: ChatContext): string {
     "- Answer with the verdict first, then the smallest useful evidence, then a useful caveat only when it materially affects the interpretation.",
     "- Put meaning before raw formulas: explain what a metric means before exposing formula details or index values.",
     "- Use pattern-first evidence: summarize the trend first, then cite only a few key runs when useful.",
+    "- Normal first-pass answers stay pattern-first and should not become exhaustive run lists.",
+    "- For follow-up drilldowns, preserve exact run dates and return the run-level evidence behind the prior summary.",
+    "- For raw-number drilldowns, show raw efficiency numbers only when the user asks for raw numbers, formulas, or underlying metrics.",
+    "- For older-run reference drilldowns, cite the relevant older run dates and measurements from the supplied activity rows.",
+    "- For short follow-ups, resolve short follow-ups like that, those, older runs, references, or behind it from the supplied session history.",
+    "- For detailed drilldown follow-ups, you may use compact tables or detailed bullets when they make raw values easier to scan.",
     "- Use a sharp running friend voice: calm, casual, analytically sharp, easy to understand, no hype.",
     "- Use light chat Markdown: short paragraphs, compact bullets, and bold for the headline verdict when helpful.",
     "- No tables unless the user asks for a detailed breakdown.",
@@ -43,6 +49,9 @@ export function buildAerisSystemPrompt(context: ChatContext): string {
     `- Aerobic efficiency 180 days ago: ${formatSnapshot(context.efficiency.previous180d)}`,
     `- Aerobic efficiency current vs 90 days ago display: ${formatNullableText(context.efficiencyDisplay.currentVsPrevious90d)}`,
     `- Aerobic efficiency current vs 180 days ago display: ${formatNullableText(context.efficiencyDisplay.currentVsPrevious180d)}`,
+    `- Raw-number drilldown requested: ${context.drilldownIntent.rawNumbers}`,
+    `- Older-run reference drilldown requested: ${context.drilldownIntent.olderRunReferences}`,
+    `- Detailed breakdown requested: ${context.drilldownIntent.detailedBreakdown}`,
     `- Recent activities compact JSON: ${context.activitiesJson}`,
     ...(context.dateComparisonFacts
       ? [

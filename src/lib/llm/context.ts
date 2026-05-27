@@ -1,5 +1,8 @@
 import type { Activity, ActivityRepository } from "../activity/types";
-import { averageEfficiencyForWindow } from "../calculations/efficiency";
+import {
+  averageEfficiencyForWindow,
+  calculateAerobicEfficiency,
+} from "../calculations/efficiency";
 import { getActivityContextMonths } from "../config/env";
 import {
   formatDistance,
@@ -10,6 +13,7 @@ import {
   formatPercentChange,
   type UnitSystem,
 } from "../measurements/formatters";
+import type { LLMMessage } from "./types";
 
 export type CompactPromptActivity = {
   d: string;
@@ -24,6 +28,7 @@ export type CompactPromptActivity = {
   asc: number | null;
   ascText: string | null;
   vo2: number | null;
+  eff: number | null;
   title?: string;
   moving?: number;
   elapsed?: number;
@@ -74,6 +79,12 @@ export type EfficiencyDisplay = {
   currentVsPrevious180d: string | null;
 };
 
+export type DrilldownIntent = {
+  rawNumbers: boolean;
+  olderRunReferences: boolean;
+  detailedBreakdown: boolean;
+};
+
 export type ChatContext = {
   contextWindowMonths: number;
   activityCount: number;
@@ -84,12 +95,14 @@ export type ChatContext = {
   dateComparisonFactsJson: string;
   efficiency: EfficiencySnapshots;
   efficiencyDisplay: EfficiencyDisplay;
+  drilldownIntent: DrilldownIntent;
 };
 
 type BuildChatContextOptions = {
   repository: ActivityRepository;
   now?: Date;
   question?: string;
+  history?: Pick<LLMMessage, "role" | "content">[];
   unitSystem?: UnitSystem;
 };
 
@@ -97,6 +110,7 @@ export async function buildChatContext({
   repository,
   now = new Date(),
   question,
+  history = [],
   unitSystem,
 }: BuildChatContextOptions): Promise<ChatContext> {
   const months = getActivityContextMonths();
@@ -114,6 +128,7 @@ export async function buildChatContext({
     displayUnitSystem,
   );
   const efficiency = buildEfficiencySnapshots(runningActivities, now);
+  const drilldownIntent = buildDrilldownIntent(question, history);
 
   return {
     contextWindowMonths: months,
@@ -125,6 +140,7 @@ export async function buildChatContext({
     dateComparisonFactsJson: JSON.stringify(dateComparisonFacts),
     efficiency,
     efficiencyDisplay: buildEfficiencyDisplay(efficiency),
+    drilldownIntent,
   };
 }
 
@@ -187,10 +203,60 @@ function toCompactPromptActivity(
     asc: activity.ascentM,
     ascText: formatElevation(activity.ascentM, unitSystem),
     vo2: activity.vo2maxEstimate,
+    eff: formatRawEfficiency(calculateAerobicEfficiency(activity)),
     ...(title === undefined ? {} : { title }),
     ...(moving === undefined ? {} : { moving }),
     ...(elapsed === undefined ? {} : { elapsed }),
   };
+}
+
+function formatRawEfficiency(value: number | null): number | null {
+  return value === null ? null : Number(value.toFixed(4));
+}
+
+function buildDrilldownIntent(
+  question: string | undefined,
+  history: Pick<LLMMessage, "role" | "content">[],
+): DrilldownIntent {
+  const current = normalizeIntentText(question);
+  const historyText = normalizeIntentText(history.map((message) => message.content).join("\n"));
+  const followUpPointer = /\b(that|those|them|it|behind|which|what were|show me)\b/.test(current);
+
+  const rawNumbers =
+    hasRawNumberIntent(current) || (followUpPointer && hasRawNumberIntent(historyText));
+  const olderRunReferences =
+    hasOlderRunReferenceIntent(current) ||
+    (followUpPointer && hasOlderRunReferenceIntent(historyText));
+  const detailedBreakdown =
+    hasDetailedBreakdownIntent(current) ||
+    rawNumbers ||
+    olderRunReferences ||
+    (followUpPointer && hasDetailedBreakdownIntent(historyText));
+
+  return {
+    rawNumbers,
+    olderRunReferences,
+    detailedBreakdown,
+  };
+}
+
+function normalizeIntentText(value: string | undefined): string {
+  return value?.toLowerCase() ?? "";
+}
+
+function hasRawNumberIntent(value: string): boolean {
+  return (
+    /\b(raw|underlying|formula|formulas|decimal|decimals|numbers?|values?)\b/.test(value) ||
+    /\bunderlying metrics?\b/.test(value)
+  );
+}
+
+function hasOlderRunReferenceIntent(value: string): boolean {
+  return /\b(older|earlier|previous|prior|baseline|references?|behind)\b/.test(value);
+}
+
+function hasDetailedBreakdownIntent(value: string): boolean {
+  return /\b(detail|details|detailed|breakdown|drilldown|evidence|table|behind)\b/.test(value);
 }
 
 function buildDateComparisonFacts(

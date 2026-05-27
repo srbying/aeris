@@ -38,6 +38,14 @@ function activity(overrides: Partial<Activity> = {}): Activity {
   };
 }
 
+function noDrilldownIntent() {
+  return {
+    rawNumbers: false,
+    olderRunReferences: false,
+    detailedBreakdown: false,
+  };
+}
+
 describe("chat context serialization", () => {
   it("serializes running activities into compact prompt keys", () => {
     const serialized = serializeActivitiesForPrompt(
@@ -62,6 +70,7 @@ describe("chat context serialization", () => {
         asc: 40,
         ascText: "131 ft",
         vo2: 49,
+        eff: 0.0192,
       },
       {
         d: "2026-05-03",
@@ -76,9 +85,36 @@ describe("chat context serialization", () => {
         asc: 40,
         ascText: "131 ft",
         vo2: 49,
+        eff: 0.0192,
       },
     ]);
     expect(JSON.stringify(serialized)).not.toContain("activityDate");
+  });
+
+  it("serializes raw per-run aerobic efficiency when a run is eligible", () => {
+    const serialized = serializeActivitiesForPrompt([activity()], {
+      months: 12,
+      now,
+    });
+
+    expect(serialized[0]).toEqual(
+      expect.objectContaining({
+        eff: 0.0192,
+      }),
+    );
+  });
+
+  it("serializes null raw per-run aerobic efficiency when a run is ineligible", () => {
+    const serialized = serializeActivitiesForPrompt([activity({ avgHr: null })], {
+      months: 12,
+      now,
+    });
+
+    expect(serialized[0]).toEqual(
+      expect.objectContaining({
+        eff: null,
+      }),
+    );
   });
 
   it("serializes display fields in metric when requested", () => {
@@ -128,6 +164,7 @@ describe("chat context serialization", () => {
         asc: 40,
         ascText: "131 ft",
         vo2: 49,
+        eff: 0.0192,
         title: "Avon Lake - W03D7-Long Run",
         moving: 4801,
         elapsed: 4804,
@@ -170,6 +207,7 @@ describe("chat context serialization", () => {
         asc: 40,
         ascText: "131 ft",
         vo2: 49,
+        eff: 0.0192,
       },
     ]);
   });
@@ -246,6 +284,32 @@ describe("chat context serialization", () => {
     expect(context.dateComparisonFactsJson).toContain('"dur":4804');
     expect(context.dateComparisonFactsJson).toContain('"durText":"1:20:04"');
     expect(context.dateComparisonFactsJson).toContain('"paceText":"7:13 /mi"');
+  });
+
+  it("detects raw-number and older-run drilldown intent from follow-up wording", async () => {
+    const repository = {
+      getActivities: vi.fn().mockResolvedValue([]),
+      getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+      insertActivities: vi.fn(),
+    } satisfies ActivityRepository;
+
+    const context = await buildChatContext({
+      repository,
+      now,
+      question: "Show the raw numbers, older run references, and detailed breakdown behind that.",
+      history: [
+        {
+          role: "assistant",
+          content: "Directionally yes: recent similar-HR runs look faster than older ones.",
+        },
+      ],
+    });
+
+    expect(context.drilldownIntent).toEqual({
+      rawNumbers: true,
+      olderRunReferences: true,
+      detailedBreakdown: true,
+    });
   });
 
   it.each([
@@ -356,6 +420,7 @@ describe("Aeris prompt builder", () => {
           asc: 40,
           ascText: "131 ft",
           vo2: 49,
+          eff: 0.0192,
         },
       ],
       activitiesJson: JSON.stringify([
@@ -372,6 +437,7 @@ describe("Aeris prompt builder", () => {
           asc: 40,
           ascText: "131 ft",
           vo2: 49,
+          eff: 0.0192,
         },
       ]),
       dateComparisonFacts: {
@@ -435,6 +501,7 @@ describe("Aeris prompt builder", () => {
         currentVsPrevious90d: "+11.0% speed per heartbeat",
         currentVsPrevious180d: null,
       },
+      drilldownIntent: noDrilldownIntent(),
     });
 
     expect(prompt).toContain(PROMPT_VERSION);
@@ -460,6 +527,57 @@ describe("Aeris prompt builder", () => {
     expect(prompt).toContain("mixed");
     expect(prompt).toContain("too noisy to call");
     expect(prompt).toContain("No tables unless the user asks");
+  });
+
+  it("injects follow-up drilldown rules without weakening first-pass summaries", () => {
+    const prompt = buildAerisSystemPrompt({
+      contextWindowMonths: 12,
+      activityCount: 1,
+      displayUnitSystem: "imperial",
+      activities: [],
+      activitiesJson: JSON.stringify([
+        {
+          d: "2026-05-01",
+          pace: 360,
+          paceText: "9:39 /mi",
+          hr: 145,
+          hrText: "145 bpm",
+          dist: 10,
+          distText: "6.2 mi",
+          dur: 3600,
+          durText: "1:00:00",
+          asc: 40,
+          ascText: "131 ft",
+          vo2: 49,
+          eff: 0.0192,
+        },
+      ]),
+      dateComparisonFacts: null,
+      dateComparisonFactsJson: "null",
+      efficiency: {
+        current30d: 0.0192,
+        previous90d: null,
+        previous180d: null,
+      },
+      efficiencyDisplay: {
+        currentVsPrevious90d: null,
+        currentVsPrevious180d: null,
+      },
+      drilldownIntent: {
+        rawNumbers: true,
+        olderRunReferences: true,
+        detailedBreakdown: true,
+      },
+    });
+
+    expect(PROMPT_VERSION).toBe("v1.3");
+    expect(prompt).toContain("Normal first-pass answers stay pattern-first");
+    expect(prompt).toContain("Raw-number drilldown requested: true");
+    expect(prompt).toContain("Older-run reference drilldown requested: true");
+    expect(prompt).toContain("Detailed breakdown requested: true");
+    expect(prompt).toContain("preserve exact run dates");
+    expect(prompt).toContain("resolve short follow-ups");
+    expect(prompt).toContain("may use compact tables");
   });
 
   it("spells out the flagship same-heart-rate answer contract", () => {
@@ -493,9 +611,10 @@ describe("Aeris prompt builder", () => {
         currentVsPrevious90d: "+9.2% speed per heartbeat",
         currentVsPrevious180d: null,
       },
+      drilldownIntent: noDrilldownIntent(),
     });
 
-    expect(PROMPT_VERSION).toBe("v1.2");
+    expect(PROMPT_VERSION).toBe("v1.3");
     expect(prompt).toContain(
       'For same-heart-rate trend questions like "Am I getting faster at the same heart rate?"',
     );

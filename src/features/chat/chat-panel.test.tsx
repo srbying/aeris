@@ -232,4 +232,49 @@ describe("ChatPanel", () => {
 
     expect(body.history).toEqual([{ role: "user", content: "First question" }]);
   });
+
+  it("sends prior assistant answers in request history for follow-up drilldowns", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        streamingResponse([
+          { delta: "**Directionally yes.** Recent similar-HR runs are faster." },
+          { done: true },
+        ]),
+      )
+      .mockResolvedValueOnce(streamingResponse([{ delta: "Raw details." }, { done: true }]));
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Am I getting faster at the same heart rate?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/recent similar-HR runs are faster/i)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Show the raw numbers behind that." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    const [, secondRequest] = fetchMock.mock.calls[1];
+    const body = JSON.parse(String(secondRequest?.body)) as {
+      history: Array<{ role: string; content: string }>;
+    };
+
+    expect(body.history).toEqual([
+      { role: "user", content: "Am I getting faster at the same heart rate?" },
+      {
+        role: "assistant",
+        content: "**Directionally yes.** Recent similar-HR runs are faster.",
+      },
+    ]);
+  });
 });
