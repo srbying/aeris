@@ -25,9 +25,6 @@ export default function Home() {
               <p className="text-sm leading-6 text-zinc-600">Running analytics</p>
             </div>
           </div>
-          <p className="max-w-sm text-sm leading-6 text-zinc-500">
-            Chat-first trend evidence for pace, heart rate, mileage, and fitness.
-          </p>
         </header>
 
         <AerisApp />
