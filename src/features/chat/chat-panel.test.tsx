@@ -26,6 +26,37 @@ function streamingResponse(events: Array<Record<string, unknown>>): Response {
   );
 }
 
+function pendingStreamingResponse(): {
+  response: Response;
+  send(event: Record<string, unknown>): void;
+  close(): void;
+} {
+  const encoder = new TextEncoder();
+  let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+
+  const response = new Response(
+    new ReadableStream({
+      start(controller) {
+        streamController = controller;
+      },
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    },
+  );
+
+  return {
+    response,
+    send(event) {
+      streamController?.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+    },
+    close() {
+      streamController?.close();
+    },
+  };
+}
+
 describe("ChatPanel", () => {
   it("renders a focused chat window with concise ask-help and persistent custom input", () => {
     render(<ChatPanel />);
@@ -63,6 +94,8 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("You are getting faster.")).toBeTruthy();
     });
+    expect(screen.getByText("You")).toBeTruthy();
+    expect(screen.getByText("Aeris")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/chat",
       expect.objectContaining({
@@ -70,6 +103,32 @@ describe("ChatPanel", () => {
         headers: { "Content-Type": "application/json" },
       }),
     );
+  });
+
+  it("renders the assistant thinking state as the active thread entry", async () => {
+    const stream = pendingStreamingResponse();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(stream.response);
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Compare this month to last month" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Compare this month to last month")).toBeTruthy();
+    });
+
+    const threadEntries = screen.getAllByRole("article");
+
+    expect(threadEntries).toHaveLength(2);
+    expect(threadEntries[0]?.textContent).toContain("You");
+    expect(threadEntries[1]?.textContent).toContain("Aeris");
+    expect(threadEntries[1]?.textContent).toContain("Aeris is reading the run history...");
+
+    stream.send({ done: true });
+    stream.close();
   });
 
   it("submits a starter prompt through the same chat flow while keeping custom input available", async () => {

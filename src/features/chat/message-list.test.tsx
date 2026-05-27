@@ -46,7 +46,7 @@ describe("MessageList", () => {
 
     expect(container.querySelector("strong")).toBeNull();
     expect(screen.queryByRole("list")).toBeNull();
-    expect(container.querySelector("article")?.textContent).toBe(
+    expect(screen.getByRole("article", { name: "You turn" }).textContent).toContain(
       "**Tempo run**\n- keep literal markers",
     );
   });
