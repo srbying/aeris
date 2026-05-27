@@ -29,7 +29,7 @@ export function ActivityHistory({ activities }: ActivityHistoryProps) {
         <button
           aria-controls={historyContentId}
           aria-expanded={isExpanded}
-          className="h-10 shrink-0 border border-zinc-300 bg-white px-4 text-sm font-medium text-zinc-800 transition hover:border-zinc-950 hover:text-zinc-950"
+          className="h-10 shrink-0 border border-zinc-300 bg-white px-4 text-sm font-medium text-zinc-800 transition hover:border-zinc-950 hover:text-zinc-950 focus-visible:border-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
           type="button"
           onClick={() => {
             setIsExpanded((current) => !current);

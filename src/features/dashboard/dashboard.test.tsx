@@ -123,6 +123,9 @@ describe("Dashboard", () => {
     expect(screen.getByRole("heading", { name: "Weekly mileage" })).toBeTruthy();
     const activityHistoryToggle = screen.getByRole("button", { name: "Show activity history" });
     expect(activityHistoryToggle.getAttribute("aria-expanded")).toBe("false");
+    expect(activityHistoryToggle.className).toContain("focus-visible:ring-2");
+    expect(activityHistoryToggle.className).toContain("focus-visible:ring-zinc-950");
+    expect(activityHistoryToggle.className).toContain("focus-visible:ring-offset-2");
     expect(screen.getAllByText("Not enough data yet.").length).toBeGreaterThanOrEqual(3);
     expect(screen.queryByText("No activities uploaded yet.")).toBeNull();
   });
