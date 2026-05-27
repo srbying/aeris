@@ -3,12 +3,18 @@ import {
   formatDistance,
   formatDuration,
   formatElevation,
+  formatHeartRate,
   formatPace,
   formatPercentChange,
   resolveDisplayUnitSystem,
 } from "./formatters";
 
 describe("measurement formatters", () => {
+  it("formats heart rate as bpm while preserving null heart-rate values", () => {
+    expect(formatHeartRate(145)).toBe("145 bpm");
+    expect(formatHeartRate(null)).toBeNull();
+  });
+
   it("formats internal seconds per kilometer as imperial min:sec per mile by default", () => {
     expect(formatPace(360, "imperial")).toBe("9:39 /mi");
   });

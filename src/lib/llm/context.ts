@@ -5,6 +5,7 @@ import {
   formatDistance,
   formatDuration,
   formatElevation,
+  formatHeartRate,
   formatPace,
   formatPercentChange,
   type UnitSystem,
@@ -15,6 +16,7 @@ export type CompactPromptActivity = {
   pace: number | null;
   paceText: string | null;
   hr: number | null;
+  hrText: string | null;
   dist: number;
   distText: string;
   dur: number;
@@ -177,6 +179,7 @@ function toCompactPromptActivity(
     pace: activity.avgPaceSecPerKm,
     paceText: formatPace(activity.avgPaceSecPerKm, unitSystem),
     hr: activity.avgHr,
+    hrText: formatHeartRate(activity.avgHr),
     dist: activity.distanceKm,
     distText: formatDistance(activity.distanceKm, unitSystem),
     dur: activity.durationSeconds,
@@ -240,7 +243,7 @@ function toDateComparisonActivityFact(
     pace: activity.avgPaceSecPerKm,
     paceText: formatPace(activity.avgPaceSecPerKm, unitSystem),
     hr: activity.avgHr,
-    hrText: activity.avgHr === null ? null : `${activity.avgHr} bpm`,
+    hrText: formatHeartRate(activity.avgHr),
     asc: activity.ascentM,
     ascText: formatElevation(activity.ascentM, unitSystem),
   };

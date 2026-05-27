@@ -410,6 +410,7 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(200);
     expect(systemMessage?.content).toContain("Default display unit system: metric");
     expect(systemMessage?.content).toContain('"paceText":"6:00 /km"');
+    expect(systemMessage?.content).toContain('"hrText":"145 bpm"');
     expect(systemMessage?.content).toContain('"distText":"10.0 km"');
     expect(systemMessage?.content).toContain('"ascText":"40 m"');
   });

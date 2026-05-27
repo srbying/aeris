@@ -40,6 +40,10 @@ export function formatElevation(meters: number | null, unitSystem: UnitSystem): 
   return `${Math.round(meters)} m`;
 }
 
+export function formatHeartRate(value: number | null): string | null {
+  return value === null ? null : `${Math.round(value)} bpm`;
+}
+
 export function formatDuration(totalSeconds: number): string {
   const rounded = Math.round(totalSeconds);
   const hours = Math.floor(rounded / 3600);
