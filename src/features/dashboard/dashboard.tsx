@@ -18,11 +18,12 @@ import { Vo2TrendChart } from "./vo2-trend-chart";
 import { WeeklyMileageChart } from "./weekly-mileage-chart";
 
 type DashboardStatus = "loading" | "ready" | "error";
+export type DashboardEvidenceView = "activity-history" | "trend-evidence" | "hidden";
 
 type DashboardProps = {
+  activeView?: DashboardEvidenceView;
   historyPanelId?: string;
   refreshKey?: number;
-  showActivityHistory?: boolean;
 };
 
 const publicActivitySchema = activityInputSchema.extend({
@@ -35,9 +36,9 @@ const publicActivitiesSchema = z.array(publicActivitySchema);
 const DASHBOARD_FETCH_TIMEOUT_MS = 3_000;
 
 export function Dashboard({
+  activeView = "trend-evidence",
   historyPanelId,
   refreshKey = 0,
-  showActivityHistory = false,
 }: DashboardProps = {}) {
   const [activities, setActivities] = useState<PublicActivity[]>([]);
   const [status, setStatus] = useState<DashboardStatus>("loading");
@@ -97,10 +98,16 @@ export function Dashboard({
     };
   }, [activities]);
 
+  if (activeView === "hidden") {
+    return null;
+  }
+
   if (status === "loading") {
     return (
       <section className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-4">
-        <h2 className="text-base font-semibold leading-6 text-zinc-950">Trend evidence</h2>
+        <h2 className="text-base font-semibold leading-6 text-zinc-950">
+          {activeView === "activity-history" ? "Activity history" : "Trend evidence"}
+        </h2>
         <p className="text-sm font-medium text-zinc-600">Loading dashboard...</p>
       </section>
     );
@@ -109,7 +116,9 @@ export function Dashboard({
   if (status === "error") {
     return (
       <section className="flex flex-col gap-4 rounded-lg border border-red-200 bg-red-50 p-4">
-        <h2 className="text-base font-semibold leading-6 text-red-950">Trend evidence</h2>
+        <h2 className="text-base font-semibold leading-6 text-red-950">
+          {activeView === "activity-history" ? "Activity history" : "Trend evidence"}
+        </h2>
         <p className="text-sm font-medium text-red-700">Unable to load dashboard data.</p>
         <button
           className="h-10 rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-800 transition hover:border-red-700"
@@ -120,6 +129,10 @@ export function Dashboard({
         </button>
       </section>
     );
+  }
+
+  if (activeView === "activity-history") {
+    return <ActivityHistory activities={dashboardData.recentActivities} id={historyPanelId} />;
   }
 
   return (
@@ -135,12 +148,8 @@ export function Dashboard({
         )}
       </div>
 
-      {showActivityHistory ? (
-        <ActivityHistory activities={dashboardData.recentActivities} id={historyPanelId} />
-      ) : null}
-
       <div
-        className="grid gap-4 grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] lg:grid-cols-[repeat(auto-fit,minmax(220px,1fr))]"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2"
         data-testid="chart-grid"
       >
         <PaceHeartRateChart data={dashboardData.paceTrend} />

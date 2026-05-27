@@ -108,10 +108,42 @@ describe("Dashboard", () => {
     });
   });
 
-  it("hides activity history by default when no activities exist", async () => {
+  it("renders no visible dashboard panel for hidden evidence view", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
 
-    render(<Dashboard />);
+    render(<Dashboard activeView="hidden" />);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/activities",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+
+    expect(screen.queryByText("Upload Garmin data to see dashboard trends.")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Pace vs heart rate" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show activity history" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Activity history" })).toBeNull();
+  });
+
+  it("renders activity history for the activity history evidence view", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+
+    render(<Dashboard activeView="activity-history" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("region", { name: "Activity history" })).toBeTruthy();
+    });
+
+    expect(screen.queryByRole("button", { name: "Show activity history" })).toBeNull();
+    expect(screen.getByText("No activities uploaded yet.")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Pace vs heart rate" })).toBeNull();
+  });
+
+  it("renders trend evidence charts for the trend evidence view", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+
+    render(<Dashboard activeView="trend-evidence" />);
 
     await waitFor(() => {
       expect(screen.getByText("Upload Garmin data to see dashboard trends.")).toBeTruthy();
@@ -122,23 +154,7 @@ describe("Dashboard", () => {
     expect(screen.getByRole("heading", { name: "VO2 max" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Weekly mileage" })).toBeTruthy();
     expect(screen.getAllByText("Not enough data yet.").length).toBeGreaterThanOrEqual(3);
-    expect(screen.queryByRole("button", { name: "Show activity history" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Activity history" })).toBeNull();
-    expect(screen.queryByText("No activities uploaded yet.")).toBeNull();
-  });
-
-  it("renders activity history when requested", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
-
-    render(<Dashboard showActivityHistory />);
-
-    await waitFor(() => {
-      expect(screen.getByText("Upload Garmin data to see dashboard trends.")).toBeTruthy();
-    });
-
-    expect(screen.queryByRole("button", { name: "Show activity history" })).toBeNull();
-    expect(screen.getByRole("region", { name: "Activity history" })).toBeTruthy();
-    expect(screen.getByText("No activities uploaded yet.")).toBeTruthy();
   });
 
   it(
@@ -200,7 +216,7 @@ describe("Dashboard", () => {
         ]),
       );
 
-      render(<Dashboard />);
+      render(<Dashboard activeView="trend-evidence" />);
 
       await waitFor(() => {
         expect(screen.getByTestId("pace-heart-rate-chart")).toBeTruthy();
@@ -238,7 +254,7 @@ describe("Dashboard", () => {
       ]),
     );
 
-    render(<Dashboard showActivityHistory />);
+    render(<Dashboard activeView="activity-history" />);
 
     await waitFor(() => {
       expect(screen.getByRole("region", { name: "Activity history" })).toBeTruthy();
@@ -255,13 +271,13 @@ describe("Dashboard", () => {
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([activity()]));
 
-    const { rerender } = render(<Dashboard refreshKey={0} />);
+    const { rerender } = render(<Dashboard activeView="trend-evidence" refreshKey={0} />);
 
     await waitFor(() => {
       expect(screen.getByText("Upload Garmin data to see dashboard trends.")).toBeTruthy();
     });
 
-    rerender(<Dashboard refreshKey={1} />);
+    rerender(<Dashboard activeView="trend-evidence" refreshKey={1} />);
 
     await waitFor(() => {
       expect(screen.getByText("Trends from 1 uploaded activities.")).toBeTruthy();

@@ -40,40 +40,45 @@ async function chartCardRects(page: Page): Promise<ChartRect[]> {
   );
 }
 
-test("renders dashboard charts and collapsible activity history from fixture-like data", async ({
+test("renders default activity history tab and trend evidence from fixture-like data", async ({
   page,
 }) => {
   await mockActivities(page, dashboardActivities);
 
   await page.goto("/");
 
+  await expect(page.getByRole("tab", { name: "Activity history" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByRole("cell", { name: "13.2 km" })).toBeVisible();
+  await expect(page.getByText("Trends from 8 uploaded activities.")).toBeHidden();
+  await expect(page.getByTestId("pace-heart-rate-chart")).toBeHidden();
+  await expect(page.getByRole("region", { name: "Import Garmin CSV" })).toBeHidden();
+
+  await page.getByRole("tab", { name: "Trend evidence" }).click();
+
+  await expect(page.getByRole("tab", { name: "Trend evidence" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(page.getByText("Trends from 8 uploaded activities.")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Pace vs heart rate" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "VO2 max" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Weekly mileage" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Activity history" })).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
   await expect(page.getByTestId("pace-heart-rate-chart")).toBeVisible();
   await expect(page.getByTestId("vo2-trend-chart")).toBeVisible();
   await expect(page.getByTestId("weekly-mileage-chart")).toBeVisible();
-  await expect(page.getByRole("region", { name: "Import Garmin CSV" })).toBeHidden();
   await expect(page.getByRole("cell", { name: "13.2 km" })).toBeHidden();
-
-  await page.getByRole("button", { name: "Activity history" }).click();
-
-  await expect(page.getByRole("button", { name: "Activity history" })).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
-  await expect(page.getByRole("cell", { name: "13.2 km" })).toBeVisible();
 
   await page.reload();
 
-  await expect(page.getByText("Trends from 8 uploaded activities.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Activity history" })).toBeVisible();
-  await expect(page.getByRole("cell", { name: "13.2 km" })).toBeHidden();
+  await expect(page.getByRole("tab", { name: "Activity history" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(page.getByRole("cell", { name: "13.2 km" })).toBeVisible();
+  await expect(page.getByText("Trends from 8 uploaded activities.")).toBeHidden();
 });
 
 test("renders empty dashboard state gracefully", async ({ page }) => {
@@ -81,14 +86,15 @@ test("renders empty dashboard state gracefully", async ({ page }) => {
 
   await page.goto("/");
 
-  await expect(page.getByText("Upload Garmin data to see dashboard trends.")).toBeVisible();
-  await expect(page.getByText("No activities uploaded yet.")).toBeHidden();
-  await expect(page.getByText("No mileage data yet.")).toBeVisible();
+  await expect(page.getByText("No activities uploaded yet.")).toBeVisible();
+  await expect(page.getByText("Upload Garmin data to see dashboard trends.")).toBeHidden();
+  await expect(page.getByText("No mileage data yet.")).toBeHidden();
   await expect(page.getByText("Unable to load dashboard data.")).toBeHidden();
 
-  await page.getByRole("button", { name: "Activity history" }).click();
+  await page.getByRole("tab", { name: "Trend evidence" }).click();
 
-  await expect(page.getByText("No activities uploaded yet.")).toBeVisible();
+  await expect(page.getByText("Upload Garmin data to see dashboard trends.")).toBeVisible();
+  await expect(page.getByText("No mileage data yet.")).toBeVisible();
 });
 
 test("shows a user-friendly dashboard error when Supabase is unavailable", async ({ page }) => {
@@ -111,11 +117,12 @@ test("lays out chart cards responsively", async ({ page }) => {
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
+  await page.getByRole("tab", { name: "Trend evidence" }).click();
 
   await expect(page.getByTestId("chart-card")).toHaveCount(4);
 
   const desktopRects = await chartCardRects(page);
-  expect(rowCounts(desktopRects)).toEqual([4]);
+  expect(rowCounts(desktopRects)).toEqual([2, 2]);
   expect(desktopRects.every((rect) => rect.height >= 220)).toBe(true);
 
   await page.setViewportSize({ width: 768, height: 900 });
@@ -141,7 +148,7 @@ test("keeps import UI hidden until triggered", async ({ page }) => {
 
   await expect(page.getByRole("region", { name: "Import Garmin CSV" })).toBeHidden();
 
-  await page.getByRole("button", { name: "Import CSV" }).click();
+  await page.getByRole("tab", { name: "Import CSV" }).click();
 
   await expect(page.getByRole("region", { name: "Import Garmin CSV" })).toBeVisible();
 });
