@@ -175,40 +175,102 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
   let segmentIndex = 0;
 
   while (cursor < text.length) {
-    const start = text.indexOf("**", cursor);
+    const token = findNextInlineToken(text, cursor);
 
-    if (start === -1) {
+    if (!token) {
       nodes.push(text.slice(cursor));
       break;
     }
 
-    const end = text.indexOf("**", start + 2);
+    const end = findClosingInlineToken(text, token);
 
     if (end === -1) {
       nodes.push(text.slice(cursor));
       break;
     }
 
-    if (start > cursor) {
-      nodes.push(text.slice(cursor, start));
+    if (token.start > cursor) {
+      nodes.push(text.slice(cursor, token.start));
     }
 
-    const strongText = text.slice(start + 2, end);
+    const inlineText = text.slice(token.start + token.marker.length, end);
 
-    if (strongText.length === 0) {
-      nodes.push(text.slice(start, end + 2));
-      cursor = end + 2;
+    if (inlineText.length === 0) {
+      nodes.push(text.slice(token.start, end + token.marker.length));
+      cursor = end + token.marker.length;
       continue;
     }
 
-    nodes.push(
-      <strong className="font-semibold text-zinc-950" key={`${keyPrefix}-${segmentIndex}`}>
-        {strongText}
-      </strong>,
-    );
+    nodes.push(renderInlineToken(token, inlineText, `${keyPrefix}-${segmentIndex}`));
     segmentIndex += 1;
-    cursor = end + 2;
+    cursor = end + token.marker.length;
   }
 
   return nodes;
+}
+
+type InlineToken = {
+  start: number;
+  marker: "**" | "*" | "`";
+};
+
+function findNextInlineToken(text: string, cursor: number): InlineToken | null {
+  for (let index = cursor; index < text.length; index += 1) {
+    if (text.startsWith("**", index)) {
+      return { start: index, marker: "**" };
+    }
+
+    if (text[index] === "`") {
+      return { start: index, marker: "`" };
+    }
+
+    if (text[index] === "*" && !text.startsWith("**", index)) {
+      return { start: index, marker: "*" };
+    }
+  }
+
+  return null;
+}
+
+function findClosingInlineToken(text: string, token: InlineToken): number {
+  const start = token.start + token.marker.length;
+
+  if (token.marker !== "*") {
+    return text.indexOf(token.marker, start);
+  }
+
+  for (let index = start; index < text.length; index += 1) {
+    if (text[index] === "*" && !text.startsWith("**", index)) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function renderInlineToken(token: InlineToken, text: string, key: string): ReactNode {
+  if (token.marker === "**") {
+    return (
+      <strong className="font-semibold text-zinc-950" key={key}>
+        {text}
+      </strong>
+    );
+  }
+
+  if (token.marker === "*") {
+    return (
+      <em className="italic text-zinc-900" key={key}>
+        {text}
+      </em>
+    );
+  }
+
+  return (
+    <code
+      className="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.92em] text-zinc-950"
+      key={key}
+    >
+      {text}
+    </code>
+  );
 }

@@ -1,14 +1,26 @@
 import type { Activity, ActivityRepository } from "../activity/types";
 import { averageEfficiencyForWindow } from "../calculations/efficiency";
 import { getActivityContextMonths } from "../config/env";
+import {
+  formatDistance,
+  formatDuration,
+  formatElevation,
+  formatPace,
+  formatPercentChange,
+  type UnitSystem,
+} from "../measurements/formatters";
 
 export type CompactPromptActivity = {
   d: string;
   pace: number | null;
+  paceText: string | null;
   hr: number | null;
   dist: number;
+  distText: string;
   dur: number;
+  durText: string;
   asc: number | null;
+  ascText: string | null;
   vo2: number | null;
   title?: string;
   moving?: number;
@@ -24,10 +36,15 @@ export type EfficiencySnapshots = {
 export type DateComparisonActivityFact = {
   d: string;
   dist: number;
+  distText: string;
   dur: number;
+  durText: string;
   pace: number | null;
+  paceText: string | null;
   hr: number | null;
+  hrText: string | null;
   asc: number | null;
+  ascText: string | null;
 };
 
 export type DateComparisonFacts = {
@@ -40,57 +57,87 @@ export type DateComparisonFacts = {
     hr: number | null;
     asc: number | null;
   };
+  deltaText: {
+    dist: string;
+    dur: string;
+    pace: string | null;
+    hr: string | null;
+    asc: string | null;
+  };
   explanationHint: string;
+};
+
+export type EfficiencyDisplay = {
+  currentVsPrevious90d: string | null;
+  currentVsPrevious180d: string | null;
 };
 
 export type ChatContext = {
   contextWindowMonths: number;
   activityCount: number;
+  displayUnitSystem: UnitSystem;
   activities: CompactPromptActivity[];
   activitiesJson: string;
   dateComparisonFacts: DateComparisonFacts | null;
   dateComparisonFactsJson: string;
   efficiency: EfficiencySnapshots;
+  efficiencyDisplay: EfficiencyDisplay;
 };
 
 type BuildChatContextOptions = {
   repository: ActivityRepository;
   now?: Date;
   question?: string;
+  unitSystem?: UnitSystem;
 };
 
 export async function buildChatContext({
   repository,
   now = new Date(),
   question,
+  unitSystem,
 }: BuildChatContextOptions): Promise<ChatContext> {
   const months = getActivityContextMonths();
+  const displayUnitSystem = unitSystem ?? "imperial";
   const activities = await repository.getRecentActivities({ months, now });
   const runningActivities = filterPromptActivities(activities, { months, now });
-  const serializedActivities = serializeActivitiesForPrompt(runningActivities, { months, now });
-  const dateComparisonFacts = buildDateComparisonFacts(runningActivities, question);
+  const serializedActivities = serializeActivitiesForPrompt(runningActivities, {
+    months,
+    now,
+    unitSystem: displayUnitSystem,
+  });
+  const dateComparisonFacts = buildDateComparisonFacts(
+    runningActivities,
+    question,
+    displayUnitSystem,
+  );
+  const efficiency = buildEfficiencySnapshots(runningActivities, now);
 
   return {
     contextWindowMonths: months,
     activityCount: serializedActivities.length,
+    displayUnitSystem,
     activities: serializedActivities,
     activitiesJson: JSON.stringify(serializedActivities),
     dateComparisonFacts,
     dateComparisonFactsJson: JSON.stringify(dateComparisonFacts),
-    efficiency: buildEfficiencySnapshots(runningActivities, now),
+    efficiency,
+    efficiencyDisplay: buildEfficiencyDisplay(efficiency),
   };
 }
 
 export function serializeActivitiesForPrompt(
   activities: Activity[],
-  options: { months: number; now: Date },
+  options: { months: number; now: Date; unitSystem?: UnitSystem },
 ): CompactPromptActivity[] {
+  const unitSystem = options.unitSystem ?? "imperial";
+
   return filterPromptActivities(activities, options)
     .sort(
       (left, right) =>
         new Date(left.activityDate).getTime() - new Date(right.activityDate).getTime(),
     )
-    .map(toCompactPromptActivity);
+    .map((activity) => toCompactPromptActivity(activity, unitSystem));
 }
 
 function filterPromptActivities(
@@ -117,7 +164,10 @@ function buildEfficiencySnapshots(activities: Activity[], now: Date): Efficiency
   };
 }
 
-function toCompactPromptActivity(activity: Activity): CompactPromptActivity {
+function toCompactPromptActivity(
+  activity: Activity,
+  unitSystem: UnitSystem,
+): CompactPromptActivity {
   const title = optionalText(activity.rawCsvRow.Title);
   const moving = parseClockSeconds(activity.rawCsvRow["Moving Time"]);
   const elapsed = parseClockSeconds(activity.rawCsvRow["Elapsed Time"]);
@@ -125,10 +175,14 @@ function toCompactPromptActivity(activity: Activity): CompactPromptActivity {
   return {
     d: activity.activityDate.slice(0, 10),
     pace: activity.avgPaceSecPerKm,
+    paceText: formatPace(activity.avgPaceSecPerKm, unitSystem),
     hr: activity.avgHr,
     dist: activity.distanceKm,
+    distText: formatDistance(activity.distanceKm, unitSystem),
     dur: activity.durationSeconds,
+    durText: formatDuration(activity.durationSeconds),
     asc: activity.ascentM,
+    ascText: formatElevation(activity.ascentM, unitSystem),
     vo2: activity.vo2maxEstimate,
     ...(title === undefined ? {} : { title }),
     ...(moving === undefined ? {} : { moving }),
@@ -139,6 +193,7 @@ function toCompactPromptActivity(activity: Activity): CompactPromptActivity {
 function buildDateComparisonFacts(
   activities: Activity[],
   question: string | undefined,
+  unitSystem: UnitSystem,
 ): DateComparisonFacts | null {
   const [focusDate, baselineDate] = extractQuestionDateKeys(question);
 
@@ -153,32 +208,127 @@ function buildDateComparisonFacts(
     return null;
   }
 
-  const focusFact = toDateComparisonActivityFact(focus);
-  const baselineFact = toDateComparisonActivityFact(baseline);
+  const focusFact = toDateComparisonActivityFact(focus, unitSystem);
+  const baselineFact = toDateComparisonActivityFact(baseline, unitSystem);
+  const delta = {
+    dist: round2(focusFact.dist - baselineFact.dist),
+    dur: focusFact.dur - baselineFact.dur,
+    pace: nullableDelta(focusFact.pace, baselineFact.pace),
+    hr: nullableDelta(focusFact.hr, baselineFact.hr),
+    asc: nullableDelta(focusFact.asc, baselineFact.asc),
+  };
 
   return {
     focus: focusFact,
     baseline: baselineFact,
-    delta: {
-      dist: round2(focusFact.dist - baselineFact.dist),
-      dur: focusFact.dur - baselineFact.dur,
-      pace: nullableDelta(focusFact.pace, baselineFact.pace),
-      hr: nullableDelta(focusFact.hr, baselineFact.hr),
-      asc: nullableDelta(focusFact.asc, baselineFact.asc),
-    },
+    delta,
+    deltaText: buildDeltaText(delta, unitSystem),
     explanationHint: buildExplanationHint(focusFact, baselineFact),
   };
 }
 
-function toDateComparisonActivityFact(activity: Activity): DateComparisonActivityFact {
+function toDateComparisonActivityFact(
+  activity: Activity,
+  unitSystem: UnitSystem,
+): DateComparisonActivityFact {
   return {
     d: activity.activityDate.slice(0, 10),
     dist: activity.distanceKm,
+    distText: formatDistance(activity.distanceKm, unitSystem),
     dur: activity.durationSeconds,
+    durText: formatDuration(activity.durationSeconds),
     pace: activity.avgPaceSecPerKm,
+    paceText: formatPace(activity.avgPaceSecPerKm, unitSystem),
     hr: activity.avgHr,
+    hrText: activity.avgHr === null ? null : `${activity.avgHr} bpm`,
     asc: activity.ascentM,
+    ascText: formatElevation(activity.ascentM, unitSystem),
   };
+}
+
+function buildDeltaText(
+  delta: DateComparisonFacts["delta"],
+  unitSystem: UnitSystem,
+): DateComparisonFacts["deltaText"] {
+  return {
+    dist: formatSignedDistanceDelta(delta.dist, unitSystem),
+    dur: formatSignedDurationDelta(delta.dur),
+    pace:
+      delta.pace === null ? null : formatSignedPaceDelta(delta.pace, unitSystem),
+    hr: delta.hr === null ? null : formatSignedWholeNumberDelta(delta.hr, "bpm"),
+    asc:
+      delta.asc === null ? null : formatSignedElevationDelta(delta.asc, unitSystem),
+  };
+}
+
+function buildEfficiencyDisplay(efficiency: EfficiencySnapshots): EfficiencyDisplay {
+  return {
+    currentVsPrevious90d: formatEfficiencyDelta(
+      efficiency.current30d,
+      efficiency.previous90d,
+    ),
+    currentVsPrevious180d: formatEfficiencyDelta(
+      efficiency.current30d,
+      efficiency.previous180d,
+    ),
+  };
+}
+
+function formatEfficiencyDelta(current: number | null, previous: number | null): string | null {
+  const percentChange = formatPercentChange(current, previous);
+
+  return percentChange === null ? null : `${percentChange} speed per heartbeat`;
+}
+
+function formatSignedDistanceDelta(deltaKm: number, unitSystem: UnitSystem): string {
+  const value = unitSystem === "imperial" ? deltaKm * 0.621371 : deltaKm;
+  const unit = unitSystem === "imperial" ? "mi" : "km";
+
+  return `${formatSign(value)}${Math.abs(value).toFixed(1)} ${unit}`;
+}
+
+function formatSignedElevationDelta(deltaMeters: number, unitSystem: UnitSystem): string {
+  const value = unitSystem === "imperial" ? deltaMeters * 3.28084 : deltaMeters;
+  const unit = unitSystem === "imperial" ? "ft" : "m";
+
+  return `${formatSign(value)}${Math.round(Math.abs(value))} ${unit}`;
+}
+
+function formatSignedPaceDelta(deltaSecondsPerKm: number, unitSystem: UnitSystem): string {
+  const displaySeconds =
+    unitSystem === "imperial" ? deltaSecondsPerKm * 1.609344 : deltaSecondsPerKm;
+  const unit = unitSystem === "imperial" ? "/mi" : "/km";
+
+  return `${formatSign(displaySeconds)}${formatUnsignedMinutesSeconds(
+    displaySeconds,
+  )} ${unit}`;
+}
+
+function formatSignedDurationDelta(deltaSeconds: number): string {
+  return `${formatSign(deltaSeconds)}${formatUnsignedMinutesSeconds(deltaSeconds)}`;
+}
+
+function formatSignedWholeNumberDelta(value: number, unit: string): string {
+  return `${formatSign(value)}${Math.round(Math.abs(value))} ${unit}`;
+}
+
+function formatSign(value: number): string {
+  return value > 0 ? "+" : value < 0 ? "-" : "";
+}
+
+function formatUnsignedMinutesSeconds(totalSeconds: number): string {
+  const rounded = Math.round(Math.abs(totalSeconds));
+  const hours = Math.floor(rounded / 3600);
+  const minutes = Math.floor((rounded % 3600) / 60);
+  const seconds = rounded % 60;
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds
+      .toString()
+      .padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function extractQuestionDateKeys(question: string | undefined): string[] {
