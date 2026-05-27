@@ -461,4 +461,58 @@ describe("Aeris prompt builder", () => {
     expect(prompt).toContain("too noisy to call");
     expect(prompt).toContain("No tables unless the user asks");
   });
+
+  it("spells out the flagship same-heart-rate answer contract", () => {
+    const prompt = buildAerisSystemPrompt({
+      contextWindowMonths: 12,
+      activityCount: 4,
+      displayUnitSystem: "imperial",
+      activities: [],
+      activitiesJson: JSON.stringify([
+        {
+          d: "2026-02-20",
+          paceText: "9:39 /mi",
+          hrText: "145 bpm",
+          distText: "6.2 mi",
+        },
+        {
+          d: "2026-05-20",
+          paceText: "8:51 /mi",
+          hrText: "146 bpm",
+          distText: "6.2 mi",
+        },
+      ]),
+      dateComparisonFacts: null,
+      dateComparisonFactsJson: "null",
+      efficiency: {
+        current30d: 0.0202,
+        previous90d: 0.0185,
+        previous180d: null,
+      },
+      efficiencyDisplay: {
+        currentVsPrevious90d: "+9.2% speed per heartbeat",
+        currentVsPrevious180d: null,
+      },
+    });
+
+    expect(PROMPT_VERSION).toBe("v1.2");
+    expect(prompt).toContain(
+      'For same-heart-rate trend questions like "Am I getting faster at the same heart rate?"',
+    );
+    expect(prompt).toContain("lead with a direct plain-language verdict");
+    expect(prompt).toContain(
+      "summarize the relevant pattern before listing individual run examples",
+    );
+    expect(prompt).toContain("cite only the smallest useful set of key runs");
+    expect(prompt).toContain("more speed for a similar heart-rate cost");
+    expect(prompt).toContain("pretty clear");
+    expect(prompt).toContain("directionally yes");
+    expect(prompt).toContain("mixed");
+    expect(prompt).toContain("too noisy to call");
+    expect(prompt).toContain(
+      "say when the data is insufficient instead of manufacturing certainty",
+    );
+    expect(prompt).toContain("Do not provide coaching recommendations");
+    expect(prompt).toContain("Do not create training plans");
+  });
 });

@@ -1,6 +1,6 @@
 import type { ChatContext } from "./context";
 
-export const PROMPT_VERSION = "v1.1";
+export const PROMPT_VERSION = "v1.2";
 
 export function buildAerisSystemPrompt(context: ChatContext): string {
   return [
@@ -19,6 +19,8 @@ export function buildAerisSystemPrompt(context: ChatContext): string {
     "- No tables unless the user asks for a detailed breakdown.",
     "- Use plain confidence language only: pretty clear, directionally yes, mixed, or too noisy to call.",
     "- Use similar heart rate, not same effort. Heart rate can support a comparison, but do not claim it proves identical effort.",
+    '- For same-heart-rate trend questions like "Am I getting faster at the same heart rate?", lead with a direct plain-language verdict, summarize the relevant pattern before listing individual run examples, cite only the smallest useful set of key runs, and explain aerobic efficiency as more speed for a similar heart-rate cost.',
+    "- For same-heart-rate trend questions, use plain confidence language and say when the data is insufficient instead of manufacturing certainty.",
     "- Name the measured axis instead of saying a run is better or worse: pace, heart rate, distance, elevation, duration, or efficiency.",
     "- Treat terrain and workout labels as material caveats when they clearly affect interpretation. Do not invent workout intent from pace alone.",
     "- Use imperial-first running language by default: miles, min:sec per mile, feet, bpm, and human-readable durations.",

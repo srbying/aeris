@@ -378,6 +378,89 @@ describe("POST /api/chat", () => {
     expect(systemMessage?.content).toContain("average pace was slower");
   });
 
+  it("injects the flagship same-heart-rate answer contract with imperial running context", async () => {
+    let capturedMessages: LLMMessage[] = [];
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream(request: LLMStreamRequest) {
+        capturedMessages = request.messages;
+        return ["**Directionally yes.**"];
+      },
+    };
+
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([
+          activity({
+            id: "older-1",
+            activityDate: "2026-02-10T08:00:00.000Z",
+            distanceKm: 10,
+            durationSeconds: 3600,
+            avgPaceSecPerKm: 360,
+            avgHr: 145,
+          }),
+          activity({
+            id: "older-2",
+            activityDate: "2026-02-20T08:00:00.000Z",
+            distanceKm: 10,
+            durationSeconds: 3540,
+            avgPaceSecPerKm: 354,
+            avgHr: 146,
+          }),
+          activity({
+            id: "recent-1",
+            activityDate: "2026-05-10T08:00:00.000Z",
+            distanceKm: 10,
+            durationSeconds: 3300,
+            avgPaceSecPerKm: 330,
+            avgHr: 145,
+          }),
+          activity({
+            id: "recent-2",
+            activityDate: "2026-05-20T08:00:00.000Z",
+            distanceKm: 10,
+            durationSeconds: 3180,
+            avgPaceSecPerKm: 318,
+            avgHr: 146,
+          }),
+        ]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Am I getting faster at the same heart rate?",
+        history: [],
+      }),
+    );
+    const body = await readStream(response);
+    const systemMessage = capturedMessages.find((message) => message.role === "system");
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('data: {"delta":"**Directionally yes.**"}');
+    expect(body).toContain('data: {"done":true}');
+    expect(systemMessage?.content).toContain("Default display unit system: imperial");
+    expect(systemMessage?.content).toContain('"paceText":"8:51 /mi"');
+    expect(systemMessage?.content).toContain('"distText":"6.2 mi"');
+    expect(systemMessage?.content).toContain('"hrText":"145 bpm"');
+    expect(systemMessage?.content).toContain("speed per heartbeat");
+    expect(systemMessage?.content).toContain(
+      'For same-heart-rate trend questions like "Am I getting faster at the same heart rate?"',
+    );
+    expect(systemMessage?.content).toContain("lead with a direct plain-language verdict");
+    expect(systemMessage?.content).toContain("cite only the smallest useful set of key runs");
+    expect(systemMessage?.content).toContain("more speed for a similar heart-rate cost");
+    expect(systemMessage?.content).toContain(
+      "say when the data is insufficient instead of manufacturing certainty",
+    );
+    expect(systemMessage?.content).toContain("Do not provide coaching recommendations");
+    expect(systemMessage?.content).toContain("Do not create training plans");
+  });
+
   it("injects metric display fields when the latest user wording asks for metric units", async () => {
     let capturedMessages: LLMMessage[] = [];
     const provider = {
