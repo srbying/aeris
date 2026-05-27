@@ -108,7 +108,7 @@ describe("Dashboard", () => {
     });
   });
 
-  it("renders coherent empty states when no activities exist", async () => {
+  it("keeps activity history collapsed by default when no activities exist", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
 
     render(<Dashboard />);
@@ -121,12 +121,37 @@ describe("Dashboard", () => {
     expect(screen.getByRole("heading", { name: "Aerobic efficiency" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "VO2 max" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Weekly mileage" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Recent activities" })).toBeTruthy();
+    const activityHistoryToggle = screen.getByRole("button", { name: "Show activity history" });
+    expect(activityHistoryToggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.getAllByText("Not enough data yet.").length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByText("No activities uploaded yet.")).toBeTruthy();
+    expect(screen.queryByText("No activities uploaded yet.")).toBeNull();
   });
 
-  it("renders chart panels with axis labels and recent activity rows from uploaded data", async () => {
+  it("expands and collapses empty activity history", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+
+    render(<Dashboard />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Show activity history" })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Show activity history" }));
+
+    expect(
+      screen.getByRole("button", { name: "Hide activity history" }).getAttribute("aria-expanded"),
+    ).toBe("true");
+    expect(screen.getByText("No activities uploaded yet.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide activity history" }));
+
+    expect(
+      screen.getByRole("button", { name: "Show activity history" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(screen.queryByText("No activities uploaded yet.")).toBeNull();
+  });
+
+  it("renders chart panels while keeping uploaded activity rows collapsed until expanded", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse([
         activity({
@@ -194,6 +219,10 @@ describe("Dashboard", () => {
     expect(screen.getByText("Efficiency")).toBeTruthy();
     expect(screen.getByText("VO2 max")).toBeTruthy();
     expect(screen.getByText("Distance (km)")).toBeTruthy();
+    expect(screen.queryByText("Cycling")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show activity history" }));
+
     expect(screen.getByText("Cycling")).toBeTruthy();
     expect(screen.getByText("24.0 km")).toBeTruthy();
     expect(screen.getByText("--")).toBeTruthy();
