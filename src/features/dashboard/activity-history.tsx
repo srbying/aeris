@@ -20,16 +20,16 @@ export function ActivityHistory({ activities }: ActivityHistoryProps) {
   const toggleLabel = isExpanded ? "Hide activity history" : "Show activity history";
 
   return (
-    <section className="border border-zinc-200 bg-white">
+    <section className="rounded-lg border border-zinc-200 bg-white shadow-sm shadow-zinc-200/60">
       <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex min-w-0 flex-col gap-2">
-          <h3 className="text-base font-semibold text-zinc-950">Activity history</h3>
+          <h3 className="text-base font-semibold leading-6 text-zinc-950">Activity history</h3>
           <p className="text-sm text-zinc-600">Last 10 uploaded activities.</p>
         </div>
         <button
           aria-controls={historyContentId}
           aria-expanded={isExpanded}
-          className="h-10 shrink-0 border border-zinc-300 bg-white px-4 text-sm font-medium text-zinc-800 transition hover:border-zinc-950 hover:text-zinc-950 focus-visible:border-zinc-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2"
+          className="h-10 shrink-0 rounded-md border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-800 transition hover:border-sky-500 hover:text-zinc-950 focus-visible:border-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-100 focus-visible:ring-offset-2"
           type="button"
           onClick={() => {
             setIsExpanded((current) => !current);
@@ -42,7 +42,7 @@ export function ActivityHistory({ activities }: ActivityHistoryProps) {
       {isExpanded ? (
         <div className="border-t border-zinc-200 p-4" id={historyContentId}>
           {activities.length === 0 ? (
-            <div className="border border-dashed border-zinc-300 bg-zinc-50 px-4 py-10 text-center text-sm font-medium text-zinc-500">
+            <div className="rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-4 py-10 text-center text-sm font-medium text-zinc-500">
               No activities uploaded yet.
             </div>
           ) : (

@@ -8,9 +8,9 @@ type ChartShellProps = {
 
 export function ChartShell({ title, description, children }: ChartShellProps) {
   return (
-    <section className="min-w-0 border border-zinc-200 bg-white p-4">
+    <section className="min-w-0 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm shadow-zinc-200/60">
       <div className="mb-4 flex flex-col gap-2">
-        <h3 className="text-base font-semibold text-zinc-950">{title}</h3>
+        <h3 className="text-base font-semibold leading-6 text-zinc-950">{title}</h3>
         <p className="text-sm text-zinc-600">{description}</p>
       </div>
       {children}
@@ -20,7 +20,7 @@ export function ChartShell({ title, description, children }: ChartShellProps) {
 
 export function EmptyPanel({ message = "Not enough data yet." }: { message?: string }) {
   return (
-    <div className="flex h-56 items-center justify-center border border-dashed border-zinc-300 bg-zinc-50 px-4 text-center text-sm font-medium text-zinc-500">
+    <div className="flex h-56 items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-4 text-center text-sm font-medium text-zinc-500">
       {message}
     </div>
   );

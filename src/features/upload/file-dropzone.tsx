@@ -36,7 +36,7 @@ export function FileDropzone({ fileName, onFileSelected, onFileRejected }: FileD
 
   return (
     <label
-      className="flex min-h-36 cursor-pointer flex-col items-center justify-center gap-4 border border-dashed border-zinc-300 bg-white px-6 py-8 text-center transition hover:border-zinc-500"
+      className="flex min-h-36 cursor-pointer flex-col items-center justify-center gap-4 rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-6 py-8 text-center transition hover:border-sky-500 hover:bg-white"
       onDragOver={(event) => event.preventDefault()}
       onDrop={handleDrop}
     >

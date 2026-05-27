@@ -32,8 +32,8 @@ export function MessageList({ messages, streamingMessageId = null }: MessageList
             aria-label={`${roleLabel} turn`}
             className={
               isUser
-                ? "ml-auto max-w-[82%] border-r-2 border-zinc-950 bg-zinc-100/70 px-4 py-4 text-right text-sm leading-6 text-zinc-950 sm:max-w-[76%]"
-                : "mr-auto max-w-[92%] border-l-2 border-sky-500 bg-white px-4 py-4 text-sm leading-6 text-zinc-800 shadow-sm shadow-zinc-200/50 sm:max-w-[86%]"
+                ? "ml-auto flex max-w-[82%] flex-col gap-2 rounded-lg border border-zinc-200 border-r-zinc-950 bg-white px-4 py-4 text-right text-sm leading-6 text-zinc-950 shadow-sm shadow-zinc-200/70 sm:max-w-[76%]"
+                : "mr-auto flex max-w-[92%] flex-col gap-2 rounded-lg border border-zinc-200 border-l-sky-500 bg-white px-4 py-4 text-sm leading-6 text-zinc-800 shadow-sm shadow-sky-950/5 sm:max-w-[86%]"
             }
             key={message.id}
           >
@@ -49,8 +49,8 @@ export function MessageList({ messages, streamingMessageId = null }: MessageList
             <p
               className={
                 isStreaming && !message.content
-                  ? "pt-2 text-zinc-500"
-                  : "whitespace-pre-wrap pt-2"
+                  ? "text-zinc-500"
+                  : "whitespace-pre-wrap"
               }
             >
               {body}
