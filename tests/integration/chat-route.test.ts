@@ -322,14 +322,113 @@ describe("POST /api/chat", () => {
     );
   });
 
-  it("injects computed date comparison facts into the system prompt", async () => {
-    let capturedMessages: LLMMessage[] = [];
+  it("streams LLM-generated follow-up suggestions before done", async () => {
+    const capturedRequests: LLMStreamRequest[] = [];
     const provider = {
       id: "fake",
       model: "fake-model",
       stream(request: LLMStreamRequest) {
-        capturedMessages = request.messages;
-        return ["May 17 took longer because pace was slower."];
+        capturedRequests.push(request);
+
+        if (capturedRequests.length === 1) {
+          return ["**Directionally yes.** Your aerobic efficiency is improving."];
+        }
+
+        return [
+          JSON.stringify({
+            suggestions: [
+              "Which older runs are you comparing that to?",
+              "Show the raw aerobic efficiency values.",
+              "What changed most in the recent runs?",
+            ],
+          }),
+        ];
+      },
+    };
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Am I getting faster at the same heart rate?",
+        history: [{ role: "assistant", content: "Earlier answer." }],
+        excludedSuggestions: ["Show the raw numbers behind that."],
+      }),
+    );
+    const body = await readStream(response);
+
+    expect(response.status).toBe(200);
+    expect(body).toContain(
+      'data: {"delta":"**Directionally yes.** Your aerobic efficiency is improving."}',
+    );
+    expect(body).toContain(
+      'data: {"suggestions":["Which older runs are you comparing that to?","Show the raw aerobic efficiency values.","What changed most in the recent runs?"]}',
+    );
+    expect(body.indexOf('"suggestions"')).toBeLessThan(body.indexOf('"done"'));
+    expect(capturedRequests).toHaveLength(2);
+    expect(capturedRequests[1]?.messages.at(-1)?.content).toContain(
+      "Show the raw numbers behind that.",
+    );
+    expect(capturedRequests[1]?.messages[0]?.content).toContain(
+      "Do not suggest coaching recommendations or training plans.",
+    );
+  });
+
+  it("finishes the answer stream when follow-up suggestion generation fails", async () => {
+    let streamCallCount = 0;
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream() {
+        streamCallCount += 1;
+
+        if (streamCallCount === 1) {
+          return ["Answer without suggestions."];
+        }
+
+        throw new Error("suggestions unavailable");
+      },
+    };
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Am I getting faster?",
+        history: [],
+      }),
+    );
+    const body = await readStream(response);
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('data: {"delta":"Answer without suggestions."}');
+    expect(body).not.toContain('"suggestions"');
+    expect(body).not.toContain('"error"');
+    expect(body).toContain('data: {"done":true}');
+  });
+
+  it("injects computed date comparison facts into the system prompt", async () => {
+    const capturedMessageCalls: LLMMessage[][] = [];
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream(request: LLMStreamRequest) {
+        capturedMessageCalls.push(request.messages);
+        return capturedMessageCalls.length === 1
+          ? ["May 17 took longer because pace was slower."]
+          : [JSON.stringify({ suggestions: [] })];
       },
     };
 
@@ -367,7 +466,7 @@ describe("POST /api/chat", () => {
       }),
     );
     const body = await readStream(response);
-    const systemMessage = capturedMessages.find((message) => message.role === "system");
+    const systemMessage = capturedMessageCalls[0]?.find((message) => message.role === "system");
 
     expect(response.status).toBe(200);
     expect(body).toContain("May 17 took longer because pace was slower.");
@@ -379,13 +478,15 @@ describe("POST /api/chat", () => {
   });
 
   it("injects the flagship same-heart-rate answer contract with imperial running context", async () => {
-    let capturedMessages: LLMMessage[] = [];
+    const capturedMessageCalls: LLMMessage[][] = [];
     const provider = {
       id: "fake",
       model: "fake-model",
       stream(request: LLMStreamRequest) {
-        capturedMessages = request.messages;
-        return ["**Directionally yes.**"];
+        capturedMessageCalls.push(request.messages);
+        return capturedMessageCalls.length === 1
+          ? ["**Directionally yes.**"]
+          : [JSON.stringify({ suggestions: [] })];
       },
     };
 
@@ -438,7 +539,7 @@ describe("POST /api/chat", () => {
       }),
     );
     const body = await readStream(response);
-    const systemMessage = capturedMessages.find((message) => message.role === "system");
+    const systemMessage = capturedMessageCalls[0]?.find((message) => message.role === "system");
 
     expect(response.status).toBe(200);
     expect(body).toContain('data: {"delta":"**Directionally yes.**"}');
@@ -462,13 +563,15 @@ describe("POST /api/chat", () => {
   });
 
   it("injects raw-number drilldown context for follow-up requests", async () => {
-    let capturedMessages: LLMMessage[] = [];
+    const capturedMessageCalls: LLMMessage[][] = [];
     const provider = {
       id: "fake",
       model: "fake-model",
       stream(request: LLMStreamRequest) {
-        capturedMessages = request.messages;
-        return ["Here are the raw numbers."];
+        capturedMessageCalls.push(request.messages);
+        return capturedMessageCalls.length === 1
+          ? ["Here are the raw numbers."]
+          : [JSON.stringify({ suggestions: [] })];
       },
     };
 
@@ -491,10 +594,11 @@ describe("POST /api/chat", () => {
       }),
     );
     await readStream(response);
-    const systemMessage = capturedMessages.find((message) => message.role === "system");
+    const answerMessages = capturedMessageCalls[0] ?? [];
+    const systemMessage = answerMessages.find((message) => message.role === "system");
 
     expect(response.status).toBe(200);
-    expect(capturedMessages.map((message) => message.role)).toEqual([
+    expect(answerMessages.map((message) => message.role)).toEqual([
       "system",
       "user",
       "assistant",
@@ -506,13 +610,15 @@ describe("POST /api/chat", () => {
   });
 
   it("injects older-run drilldown context for reference follow-ups", async () => {
-    let capturedMessages: LLMMessage[] = [];
+    const capturedMessageCalls: LLMMessage[][] = [];
     const provider = {
       id: "fake",
       model: "fake-model",
       stream(request: LLMStreamRequest) {
-        capturedMessages = request.messages;
-        return ["The older references were February 10 and February 20."];
+        capturedMessageCalls.push(request.messages);
+        return capturedMessageCalls.length === 1
+          ? ["The older references were February 10 and February 20."]
+          : [JSON.stringify({ suggestions: [] })];
       },
     };
 
@@ -555,7 +661,7 @@ describe("POST /api/chat", () => {
       }),
     );
     await readStream(response);
-    const systemMessage = capturedMessages.find((message) => message.role === "system");
+    const systemMessage = capturedMessageCalls[0]?.find((message) => message.role === "system");
 
     expect(response.status).toBe(200);
     expect(systemMessage?.content).toContain("Older-run reference drilldown requested: true");
@@ -565,13 +671,15 @@ describe("POST /api/chat", () => {
   });
 
   it("injects metric display fields when the latest user wording asks for metric units", async () => {
-    let capturedMessages: LLMMessage[] = [];
+    const capturedMessageCalls: LLMMessage[][] = [];
     const provider = {
       id: "fake",
       model: "fake-model",
       stream(request: LLMStreamRequest) {
-        capturedMessages = request.messages;
-        return ["Metric answer."];
+        capturedMessageCalls.push(request.messages);
+        return capturedMessageCalls.length === 1
+          ? ["Metric answer."]
+          : [JSON.stringify({ suggestions: [] })];
       },
     };
 
@@ -591,7 +699,7 @@ describe("POST /api/chat", () => {
       }),
     );
     await readStream(response);
-    const systemMessage = capturedMessages.find((message) => message.role === "system");
+    const systemMessage = capturedMessageCalls[0]?.find((message) => message.role === "system");
 
     expect(response.status).toBe(200);
     expect(systemMessage?.content).toContain("Default display unit system: metric");

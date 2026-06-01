@@ -8,7 +8,7 @@ export function AerisApp() {
     <div className="flex flex-col gap-6">
       <section
         aria-label="Aeris conversation"
-        className="mx-auto flex h-[60vh] min-h-[280px] w-full max-w-[900px] flex-col"
+        className="mx-auto flex h-[78vh] min-h-[280px] w-full max-w-6xl flex-col lg:min-h-[620px]"
       >
         <ChatPanel />
       </section>

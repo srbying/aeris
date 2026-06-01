@@ -318,10 +318,17 @@ describe("ChatPanel", () => {
     ]);
   });
 
-  it("shows contextual follow-up prompts after an assistant response completes", async () => {
+  it("shows server-generated follow-up prompts after an assistant response completes", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       streamingResponse([
         { delta: "**Directionally yes.** Your aerobic efficiency is improving." },
+        {
+          suggestions: [
+            "What changed most in the recent runs?",
+            "Which older run should I compare this to?",
+            "Show the exact dates behind that.",
+          ],
+        },
         { done: true },
       ]),
     );
@@ -336,28 +343,35 @@ describe("ChatPanel", () => {
     await waitFor(() => {
       expect(
         screen.getByRole("button", {
-          name: /quick reply: show the raw numbers behind that/i,
+          name: /quick reply: what changed most in the recent runs/i,
         }),
       ).toBeTruthy();
     });
     expect(
       screen.getByRole("button", {
-        name: /quick reply: which older runs are you comparing that to/i,
+        name: /quick reply: which older run should i compare this to/i,
       }),
     ).toBeTruthy();
     expect(
       screen.getByRole("button", {
-        name: /quick reply: show the raw aerobic efficiency values/i,
+        name: /quick reply: show the exact dates behind that/i,
       }),
     ).toBeTruthy();
   });
 
-  it("sends a follow-up prompt immediately with prior chat history", async () => {
+  it("sends a server follow-up prompt immediately with prior chat history and exclusions", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         streamingResponse([
           { delta: "**Directionally yes.** Your aerobic efficiency is improving." },
+          {
+            suggestions: [
+              "What changed most in the recent runs?",
+              "Which older run should I compare this to?",
+              "Show the exact dates behind that.",
+            ],
+          },
           { done: true },
         ]),
       )
@@ -371,7 +385,7 @@ describe("ChatPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     const followUp = await screen.findByRole("button", {
-      name: /quick reply: show the raw numbers behind that/i,
+      name: /quick reply: what changed most in the recent runs/i,
     });
     fireEvent.click(followUp);
 
@@ -382,10 +396,16 @@ describe("ChatPanel", () => {
     const [, secondRequest] = fetchMock.mock.calls[1];
     const body = JSON.parse(String(secondRequest?.body)) as {
       message: string;
+      excludedSuggestions: string[];
       history: Array<{ role: string; content: string }>;
     };
 
-    expect(body.message).toBe("Show the raw numbers behind that.");
+    expect(body.message).toBe("What changed most in the recent runs?");
+    expect(body.excludedSuggestions).toEqual([
+      "What changed most in the recent runs?",
+      "Which older run should I compare this to?",
+      "Show the exact dates behind that.",
+    ]);
     expect(body.history).toEqual([
       { role: "user", content: "Am I getting faster at the same heart rate?" },
       {
@@ -401,6 +421,13 @@ describe("ChatPanel", () => {
       .mockResolvedValueOnce(
         streamingResponse([
           { delta: "**Directionally yes.** Your aerobic efficiency is improving." },
+          {
+            suggestions: [
+              "What changed most in the recent runs?",
+              "Which older run should I compare this to?",
+              "Show the exact dates behind that.",
+            ],
+          },
           { done: true },
         ]),
       )
@@ -414,19 +441,26 @@ describe("ChatPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     const rawNumbersPrompt = await screen.findByRole("button", {
-      name: /quick reply: show the raw numbers behind that/i,
+      name: /quick reply: what changed most in the recent runs/i,
     });
     fireEvent.click(rawNumbersPrompt);
 
     await waitFor(() => {
       expect(
         screen.queryByRole("button", {
-          name: /quick reply: show the raw numbers behind that/i,
+          name: /quick reply: what changed most in the recent runs/i,
         }),
       ).toBeNull();
     });
 
     secondStream.send({ delta: "Your VO2 max estimate changed most in May." });
+    secondStream.send({
+      suggestions: [
+        "Which dates changed the VO2 max estimate most?",
+        "Compare that with the previous period.",
+        "Show the runs behind that VO2 change.",
+      ],
+    });
     secondStream.send({ done: true });
     secondStream.close();
 
@@ -437,6 +471,62 @@ describe("ChatPanel", () => {
         }),
       ).toBeTruthy();
     });
+  });
+
+  it("dedupes repeated server follow-up suggestions already shown in this session", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        streamingResponse([
+          { delta: "First answer." },
+          {
+            suggestions: [
+              "What changed most in the recent runs?",
+              "Which older run should I compare this to?",
+              "Show the exact dates behind that.",
+            ],
+          },
+          { done: true },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        streamingResponse([
+          { delta: "Second answer." },
+          {
+            suggestions: [
+              "What changed most in the recent runs?",
+              "Which runs are driving that answer?",
+              "What should I compare that with?",
+            ],
+          },
+          { done: true },
+        ]),
+      );
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "First question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    const firstPrompt = await screen.findByRole("button", {
+      name: /quick reply: what changed most in the recent runs/i,
+    });
+    fireEvent.click(firstPrompt);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    await screen.findByRole("button", {
+      name: /quick reply: which runs are driving that answer/i,
+    });
+
+    expect(
+      screen.queryByRole("button", {
+        name: /quick reply: what changed most in the recent runs/i,
+      }),
+    ).toBeNull();
   });
 
   it("does not show follow-up prompts after an interrupted streamed response", async () => {

@@ -13,6 +13,7 @@ const StreamEventSchema = z
     delta: z.string().optional(),
     done: z.boolean().optional(),
     error: z.string().optional(),
+    suggestions: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -25,11 +26,8 @@ const STARTER_PROMPTS = [
   "How has my VO2 max changed over 6 months?",
 ];
 
-const DEFAULT_FOLLOW_UP_PROMPTS = [
-  "Show the raw numbers behind that.",
-  "Which runs are driving that answer?",
-  "What should I compare that with?",
-];
+const MAX_EXCLUDED_SUGGESTIONS = 20;
+const MAX_FOLLOW_UP_PROMPTS = 3;
 
 export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -38,6 +36,7 @@ export function ChatPanel() {
   const [error, setError] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [followUpPrompts, setFollowUpPrompts] = useState<string[]>([]);
+  const shownSuggestionHistoryRef = useRef<string[]>([]);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -68,28 +67,20 @@ export function ChatPanel() {
     setStreamingMessageId(assistantMessage.id);
     setError(null);
     setFollowUpPrompts([]);
-    let assistantContent = "";
 
     try {
       const streamError = await sendChatMessage({
+        excludedSuggestions: shownSuggestionHistoryRef.current.slice(-MAX_EXCLUDED_SUGGESTIONS),
         message: trimmedMessage,
         history,
         onDelta: (delta) => {
-          assistantContent += delta;
           appendAssistantDelta(assistantMessage.id, delta);
         },
+        onSuggestions: showFollowUpPrompts,
       });
 
       if (streamError) {
         setError(streamError);
-      } else if (assistantContent.trim().length > 0) {
-        setFollowUpPrompts(
-          buildFollowUpPrompts({
-            question: trimmedMessage,
-            answer: assistantContent,
-            history,
-          }),
-        );
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Chat failed.");
@@ -107,6 +98,22 @@ export function ChatPanel() {
           : message,
       ),
     );
+  }
+
+  function showFollowUpPrompts(suggestions: string[]) {
+    const prompts = uniquePrompts(suggestions, shownSuggestionHistoryRef.current).slice(
+      0,
+      MAX_FOLLOW_UP_PROMPTS,
+    );
+
+    setFollowUpPrompts(prompts);
+
+    if (prompts.length > 0) {
+      shownSuggestionHistoryRef.current = uniquePromptHistory([
+        ...shownSuggestionHistoryRef.current,
+        ...prompts,
+      ]).slice(-MAX_EXCLUDED_SUGGESTIONS);
+    }
   }
 
   return (
@@ -215,57 +222,14 @@ function SuggestedPromptButtons({
   );
 }
 
-function buildFollowUpPrompts({
-  question,
-  answer,
-  history,
-}: {
-  question: string;
-  answer: string;
-  history: ChatHistoryMessage[];
-}): string[] {
-  const normalizedSource = `${question}\n${answer}`.toLowerCase();
-  const normalizedHistory = history.map((message) => message.content).join("\n").toLowerCase();
-  const prompts: string[] = [];
-
-  addPromptMatches(prompts, normalizedSource);
-
-  if (prompts.length === 0) {
-    addPromptMatches(prompts, normalizedHistory);
-  }
-
-  return uniquePrompts([...prompts, ...DEFAULT_FOLLOW_UP_PROMPTS]).slice(0, 3);
-}
-
-function addPromptMatches(prompts: string[], source: string): void {
-  if (/\b(vo2|vo2 max|vo2max)\b/.test(source)) {
-    prompts.push("Which dates changed the VO2 max estimate most?");
-  }
-
-  if (/\b(noisy|mixed|too noisy|uncertain|insufficient)\b/.test(source)) {
-    prompts.push("Which runs make this too noisy to call?");
-  }
-
-  if (/\b(month|week|period|30d|90d|180d|year)\b/.test(source)) {
-    prompts.push("Compare that with the previous period.");
-  }
-
-  if (/\b(same heart rate|similar-hr|heart rate|aerobic efficiency|efficiency)\b/.test(source)) {
-    prompts.push(
-      "Show the raw numbers behind that.",
-      "Which older runs are you comparing that to?",
-      "Show the raw aerobic efficiency values.",
-    );
-  }
-}
-
-function uniquePrompts(prompts: string[]): string[] {
-  const seen = new Set<string>();
+function uniquePrompts(prompts: string[], excludedPrompts: string[] = []): string[] {
+  const seen = new Set(excludedPrompts.map(normalizePrompt));
 
   return prompts.filter((prompt) => {
-    const key = prompt.toLowerCase();
+    const trimmedPrompt = prompt.trim();
+    const key = normalizePrompt(trimmedPrompt);
 
-    if (seen.has(key)) {
+    if (trimmedPrompt.length === 0 || seen.has(key)) {
       return false;
     }
 
@@ -274,19 +238,37 @@ function uniquePrompts(prompts: string[]): string[] {
   });
 }
 
+function uniquePromptHistory(prompts: string[]): string[] {
+  return uniquePrompts(prompts);
+}
+
+function normalizePrompt(prompt: string): string {
+  return prompt.trim().toLowerCase();
+}
+
 async function sendChatMessage({
+  excludedSuggestions,
   message,
   history,
   onDelta,
+  onSuggestions,
 }: {
+  excludedSuggestions: string[];
   message: string;
   history: ChatHistoryMessage[];
   onDelta(delta: string): void;
+  onSuggestions(suggestions: string[]): void;
 }): Promise<string | null> {
+  const payload = {
+    message,
+    history,
+    ...(excludedSuggestions.length > 0 ? { excludedSuggestions } : {}),
+  };
+
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -300,6 +282,10 @@ async function sendChatMessage({
 
     if (event.error) {
       return event.error;
+    }
+
+    if (event.suggestions) {
+      onSuggestions(event.suggestions);
     }
 
     if (event.done) {
