@@ -277,4 +277,48 @@ describe("ChatPanel", () => {
       },
     ]);
   });
+
+  it("keeps follow-up history within the API cap while preserving the latest answer", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { message: string };
+
+      return Promise.resolve(
+        streamingResponse([{ delta: `Answer for ${body.message}` }, { done: true }]),
+      );
+    });
+
+    render(<ChatPanel />);
+
+    for (let index = 1; index <= 6; index += 1) {
+      fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+        target: { value: `Question ${index}` },
+      });
+      fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(`Answer for Question ${index}`)).toBeTruthy();
+      });
+    }
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Show the raw numbers behind that." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(7);
+    });
+
+    const [, finalRequest] = fetchMock.mock.calls[6];
+    const body = JSON.parse(String(finalRequest?.body)) as {
+      history: Array<{ role: string; content: string }>;
+    };
+
+    expect(body.history).toHaveLength(10);
+    expect(body.history[0]).toEqual({ role: "user", content: "Question 2" });
+    expect(body.history.at(-1)).toEqual({
+      role: "assistant",
+      content: "Answer for Question 6",
+    });
+  });
 });

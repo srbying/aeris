@@ -7,6 +7,7 @@ import { type ChatMessage, MessageList } from "./message-list";
 
 type ChatStatus = "idle" | "streaming";
 
+const MAX_CHAT_HISTORY_MESSAGES = 10;
 const StreamEventSchema = z
   .object({
     delta: z.string().optional(),
@@ -138,6 +139,7 @@ function createChatExchange(content: string): {
 function buildChatHistory(messages: ChatMessage[]): ChatHistoryMessage[] {
   return messages
     .filter((message) => message.content.trim().length > 0)
+    .slice(-MAX_CHAT_HISTORY_MESSAGES)
     .map(({ role, content }) => ({ role, content }));
 }
 
