@@ -318,6 +318,173 @@ describe("ChatPanel", () => {
     ]);
   });
 
+  it("shows contextual follow-up prompts after an assistant response completes", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      streamingResponse([
+        { delta: "**Directionally yes.** Your aerobic efficiency is improving." },
+        { done: true },
+      ]),
+    );
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Am I getting faster at the same heart rate?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", {
+          name: /quick reply: show the raw numbers behind that/i,
+        }),
+      ).toBeTruthy();
+    });
+    expect(
+      screen.getByRole("button", {
+        name: /quick reply: which older runs are you comparing that to/i,
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: /quick reply: show the raw aerobic efficiency values/i,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("sends a follow-up prompt immediately with prior chat history", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        streamingResponse([
+          { delta: "**Directionally yes.** Your aerobic efficiency is improving." },
+          { done: true },
+        ]),
+      )
+      .mockResolvedValueOnce(streamingResponse([{ delta: "Raw details." }, { done: true }]));
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Am I getting faster at the same heart rate?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    const followUp = await screen.findByRole("button", {
+      name: /quick reply: show the raw numbers behind that/i,
+    });
+    fireEvent.click(followUp);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    const [, secondRequest] = fetchMock.mock.calls[1];
+    const body = JSON.parse(String(secondRequest?.body)) as {
+      message: string;
+      history: Array<{ role: string; content: string }>;
+    };
+
+    expect(body.message).toBe("Show the raw numbers behind that.");
+    expect(body.history).toEqual([
+      { role: "user", content: "Am I getting faster at the same heart rate?" },
+      {
+        role: "assistant",
+        content: "**Directionally yes.** Your aerobic efficiency is improving.",
+      },
+    ]);
+  });
+
+  it("hides follow-up prompts while streaming and replaces them after the next answer", async () => {
+    const secondStream = pendingStreamingResponse();
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        streamingResponse([
+          { delta: "**Directionally yes.** Your aerobic efficiency is improving." },
+          { done: true },
+        ]),
+      )
+      .mockResolvedValueOnce(secondStream.response);
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Am I getting faster at the same heart rate?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    const rawNumbersPrompt = await screen.findByRole("button", {
+      name: /quick reply: show the raw numbers behind that/i,
+    });
+    fireEvent.click(rawNumbersPrompt);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", {
+          name: /quick reply: show the raw numbers behind that/i,
+        }),
+      ).toBeNull();
+    });
+
+    secondStream.send({ delta: "Your VO2 max estimate changed most in May." });
+    secondStream.send({ done: true });
+    secondStream.close();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", {
+          name: /quick reply: which dates changed the vo2 max estimate most/i,
+        }),
+      ).toBeTruthy();
+    });
+  });
+
+  it("does not show follow-up prompts after an interrupted streamed response", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      streamingResponse([
+        { delta: "Here is a partial efficiency answer." },
+        { error: "Response interrupted. Please retry your question." },
+      ]),
+    );
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Am I getting faster at the same heart rate?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/response interrupted/i)).toBeTruthy();
+    });
+    expect(
+      screen.queryByRole("button", {
+        name: /quick reply: show the raw numbers behind that/i,
+      }),
+    ).toBeNull();
+  });
+
+  it("does not show follow-up prompts after a failed request", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "Upload your Garmin data to start chatting with Aeris." }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Am I getting faster?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/upload your garmin data/i)).toBeTruthy();
+    });
+    expect(screen.queryByRole("button", { name: /quick reply: show the raw numbers/i })).toBeNull();
+  });
+
   it("keeps follow-up history within the API cap while preserving the latest answer", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
       const body = JSON.parse(String(init?.body)) as { message: string };

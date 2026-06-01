@@ -25,12 +25,19 @@ const STARTER_PROMPTS = [
   "How has my VO2 max changed over 6 months?",
 ];
 
+const DEFAULT_FOLLOW_UP_PROMPTS = [
+  "Show the raw numbers behind that.",
+  "Which runs are driving that answer?",
+  "What should I compare that with?",
+];
+
 export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [followUpPrompts, setFollowUpPrompts] = useState<string[]>([]);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -43,7 +50,7 @@ export function ChatPanel() {
     if (typeof scrollAnchor?.scrollIntoView === "function") {
       scrollAnchor.scrollIntoView({ block: "end" });
     }
-  }, [messages, error, streamingMessageId]);
+  }, [messages, error, streamingMessageId, followUpPrompts]);
 
   async function submitMessage(message: string) {
     const trimmedMessage = message.trim();
@@ -60,16 +67,29 @@ export function ChatPanel() {
     setStatus("streaming");
     setStreamingMessageId(assistantMessage.id);
     setError(null);
+    setFollowUpPrompts([]);
+    let assistantContent = "";
 
     try {
       const streamError = await sendChatMessage({
         message: trimmedMessage,
         history,
-        onDelta: (delta) => appendAssistantDelta(assistantMessage.id, delta),
+        onDelta: (delta) => {
+          assistantContent += delta;
+          appendAssistantDelta(assistantMessage.id, delta);
+        },
       });
 
       if (streamError) {
         setError(streamError);
+      } else if (assistantContent.trim().length > 0) {
+        setFollowUpPrompts(
+          buildFollowUpPrompts({
+            question: trimmedMessage,
+            answer: assistantContent,
+            history,
+          }),
+        );
       }
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Chat failed.");
@@ -105,9 +125,10 @@ export function ChatPanel() {
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto bg-zinc-50/70 px-4 py-5 sm:px-6">
         {messages.length === 0 ? (
-          <StarterPromptButtons
+          <SuggestedPromptButtons
             disabled={status === "streaming"}
             onSelect={(prompt) => void submitMessage(prompt)}
+            prompts={STARTER_PROMPTS}
           />
         ) : null}
 
@@ -119,6 +140,13 @@ export function ChatPanel() {
         />
 
         {error ? <p className="text-sm font-medium text-red-700">{error}</p> : null}
+        {followUpPrompts.length > 0 && status === "idle" ? (
+          <SuggestedPromptButtons
+            disabled={false}
+            onSelect={(prompt) => void submitMessage(prompt)}
+            prompts={followUpPrompts}
+          />
+        ) : null}
         <div ref={scrollAnchorRef} />
       </div>
 
@@ -157,19 +185,21 @@ function buildChatHistory(messages: ChatMessage[]): ChatHistoryMessage[] {
     .map(({ role, content }) => ({ role, content }));
 }
 
-function StarterPromptButtons({
+function SuggestedPromptButtons({
   disabled,
   onSelect,
+  prompts,
 }: {
   disabled: boolean;
   onSelect(prompt: string): void;
+  prompts: string[];
 }) {
   return (
     <div
-      aria-label="Starter prompts"
+      aria-label="Suggested prompts"
       className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
     >
-      {STARTER_PROMPTS.map((prompt) => (
+      {prompts.map((prompt) => (
         <button
           aria-label={`Quick reply: ${prompt}`}
           className="shrink-0 rounded-md border border-zinc-200 bg-white px-4 py-2 text-left text-sm font-medium leading-5 text-zinc-800 shadow-sm shadow-zinc-200/70 transition-[border-color,box-shadow,color] duration-200 hover:border-sky-400 hover:text-zinc-950 hover:shadow-sky-100 focus-visible:border-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:text-zinc-400 motion-reduce:transition-none"
@@ -183,6 +213,65 @@ function StarterPromptButtons({
       ))}
     </div>
   );
+}
+
+function buildFollowUpPrompts({
+  question,
+  answer,
+  history,
+}: {
+  question: string;
+  answer: string;
+  history: ChatHistoryMessage[];
+}): string[] {
+  const normalizedSource = `${question}\n${answer}`.toLowerCase();
+  const normalizedHistory = history.map((message) => message.content).join("\n").toLowerCase();
+  const prompts: string[] = [];
+
+  addPromptMatches(prompts, normalizedSource);
+
+  if (prompts.length === 0) {
+    addPromptMatches(prompts, normalizedHistory);
+  }
+
+  return uniquePrompts([...prompts, ...DEFAULT_FOLLOW_UP_PROMPTS]).slice(0, 3);
+}
+
+function addPromptMatches(prompts: string[], source: string): void {
+  if (/\b(vo2|vo2 max|vo2max)\b/.test(source)) {
+    prompts.push("Which dates changed the VO2 max estimate most?");
+  }
+
+  if (/\b(noisy|mixed|too noisy|uncertain|insufficient)\b/.test(source)) {
+    prompts.push("Which runs make this too noisy to call?");
+  }
+
+  if (/\b(month|week|period|30d|90d|180d|year)\b/.test(source)) {
+    prompts.push("Compare that with the previous period.");
+  }
+
+  if (/\b(same heart rate|similar-hr|heart rate|aerobic efficiency|efficiency)\b/.test(source)) {
+    prompts.push(
+      "Show the raw numbers behind that.",
+      "Which older runs are you comparing that to?",
+      "Show the raw aerobic efficiency values.",
+    );
+  }
+}
+
+function uniquePrompts(prompts: string[]): string[] {
+  const seen = new Set<string>();
+
+  return prompts.filter((prompt) => {
+    const key = prompt.toLowerCase();
+
+    if (seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
 }
 
 async function sendChatMessage({
