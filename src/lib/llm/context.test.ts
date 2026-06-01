@@ -697,6 +697,52 @@ describe("Aeris prompt builder", () => {
     expect(prompt).toContain("may use compact tables");
   });
 
+  it("locks in sharp running friend guardrails for normal analytics answers", () => {
+    const prompt = buildAerisSystemPrompt({
+      contextWindowMonths: 12,
+      activityCount: 2,
+      displayUnitSystem: "imperial",
+      activities: [],
+      activitiesJson: JSON.stringify([
+        {
+          d: "2026-05-01",
+          paceText: "9:39 /mi",
+          hrText: "145 bpm",
+          distText: "6.2 mi",
+        },
+        {
+          d: "2026-05-20",
+          paceText: "8:51 /mi",
+          hrText: "146 bpm",
+          distText: "6.2 mi",
+        },
+      ]),
+      dateComparisonFacts: null,
+      dateComparisonFactsJson: "null",
+      efficiency: {
+        current30d: 0.0202,
+        previous90d: 0.0185,
+        previous180d: null,
+      },
+      efficiencyDisplay: {
+        currentVsPrevious90d: "+9.2% speed per heartbeat",
+        currentVsPrevious180d: null,
+      },
+      drilldownIntent: noDrilldownIntent(),
+    });
+
+    expect(prompt).toContain("Use a sharp running friend voice");
+    expect(prompt).toContain("calm, casual, analytically sharp");
+    expect(prompt).toContain("Avoid motivational hype");
+    expect(prompt).toContain("Do not praise, cheerlead, or use motivational language");
+    expect(prompt).toContain("Do not provide coaching recommendations");
+    expect(prompt).toContain("Do not create training plans");
+    expect(prompt).toContain("Do not call a run better or worse unless the user has defined the comparison axis");
+    expect(prompt).toContain("name the measured axis");
+    expect(prompt).toContain("Do not imply statistical confidence, significance, certainty, or precision unless a statistic was actually computed");
+    expect(prompt).toContain("Use only plain confidence language");
+  });
+
   it("spells out the flagship same-heart-rate answer contract", () => {
     const prompt = buildAerisSystemPrompt({
       contextWindowMonths: 12,

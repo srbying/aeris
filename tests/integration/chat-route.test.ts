@@ -562,6 +562,66 @@ describe("POST /api/chat", () => {
     expect(systemMessage?.content).toContain("Do not create training plans");
   });
 
+  it("injects sharp running friend guardrails into normal answer prompts", async () => {
+    const capturedMessageCalls: LLMMessage[][] = [];
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream(request: LLMStreamRequest) {
+        capturedMessageCalls.push(request.messages);
+        return capturedMessageCalls.length === 1
+          ? ["**Directionally yes.**"]
+          : [JSON.stringify({ suggestions: [] })];
+      },
+    };
+
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([
+          activity({
+            id: "older",
+            activityDate: "2026-02-10T08:00:00.000Z",
+            avgPaceSecPerKm: 360,
+            avgHr: 145,
+          }),
+          activity({
+            id: "recent",
+            activityDate: "2026-05-20T08:00:00.000Z",
+            avgPaceSecPerKm: 318,
+            avgHr: 146,
+          }),
+        ]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Am I getting faster?",
+        history: [],
+      }),
+    );
+    await readStream(response);
+    const systemMessage = capturedMessageCalls[0]?.find((message) => message.role === "system");
+
+    expect(response.status).toBe(200);
+    expect(systemMessage?.content).toContain("Avoid motivational hype");
+    expect(systemMessage?.content).toContain(
+      "Do not praise, cheerlead, or use motivational language",
+    );
+    expect(systemMessage?.content).toContain(
+      "Do not call a run better or worse unless the user has defined the comparison axis",
+    );
+    expect(systemMessage?.content).toContain("name the measured axis");
+    expect(systemMessage?.content).toContain(
+      "Do not imply statistical confidence, significance, certainty, or precision unless a statistic was actually computed",
+    );
+    expect(systemMessage?.content).toContain("Do not provide coaching recommendations");
+    expect(systemMessage?.content).toContain("Do not create training plans");
+  });
+
   it("injects raw-number drilldown context for follow-up requests", async () => {
     const capturedMessageCalls: LLMMessage[][] = [];
     const provider = {

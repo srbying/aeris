@@ -15,6 +15,8 @@ import {
 } from "../measurements/formatters";
 import type { LLMMessage } from "./types";
 
+export type WorkoutLabel = "long run" | "tempo" | "intervals";
+
 export type CompactPromptActivity = {
   d: string;
   pace: number | null;
@@ -32,6 +34,7 @@ export type CompactPromptActivity = {
   title?: string;
   moving?: number;
   elapsed?: number;
+  label?: WorkoutLabel;
 };
 
 export type EfficiencySnapshots = {
@@ -52,6 +55,7 @@ export type DateComparisonActivityFact = {
   hrText: string | null;
   asc: number | null;
   ascText: string | null;
+  label?: WorkoutLabel;
 };
 
 export type DateComparisonFacts = {
@@ -72,6 +76,18 @@ export type DateComparisonFacts = {
     asc: string | null;
   };
   explanationHint: string;
+  terrain?: {
+    material: boolean;
+    hillier: "focus" | "baseline";
+    deltaText: string;
+    deltaPerMileText: string;
+    hint: string;
+  };
+  workoutLabels?: {
+    focus: WorkoutLabel | null;
+    baseline: WorkoutLabel | null;
+    hint: string;
+  };
 };
 
 export type EfficiencyDisplay = {
@@ -189,6 +205,7 @@ function toCompactPromptActivity(
   const title = optionalText(activity.rawCsvRow.Title);
   const moving = parseClockSeconds(activity.rawCsvRow["Moving Time"]);
   const elapsed = parseClockSeconds(activity.rawCsvRow["Elapsed Time"]);
+  const label = extractWorkoutLabel(activity.rawCsvRow);
 
   return {
     d: activity.activityDate.slice(0, 10),
@@ -207,6 +224,7 @@ function toCompactPromptActivity(
     ...(title === undefined ? {} : { title }),
     ...(moving === undefined ? {} : { moving }),
     ...(elapsed === undefined ? {} : { elapsed }),
+    ...(label === undefined ? {} : { label }),
   };
 }
 
@@ -286,13 +304,17 @@ function buildDateComparisonFacts(
     hr: nullableDelta(focusFact.hr, baselineFact.hr),
     asc: nullableDelta(focusFact.asc, baselineFact.asc),
   };
+  const terrain = buildTerrainComparison(focusFact, baselineFact, delta, unitSystem);
+  const workoutLabels = buildWorkoutLabelComparison(focusFact, baselineFact);
 
   return {
     focus: focusFact,
     baseline: baselineFact,
     delta,
     deltaText: buildDeltaText(delta, unitSystem),
-    explanationHint: buildExplanationHint(focusFact, baselineFact),
+    explanationHint: buildExplanationHint(focusFact, baselineFact, terrain),
+    ...(terrain === undefined ? {} : { terrain }),
+    ...(workoutLabels === undefined ? {} : { workoutLabels }),
   };
 }
 
@@ -300,6 +322,8 @@ function toDateComparisonActivityFact(
   activity: Activity,
   unitSystem: UnitSystem,
 ): DateComparisonActivityFact {
+  const label = extractWorkoutLabel(activity.rawCsvRow);
+
   return {
     d: activity.activityDate.slice(0, 10),
     dist: activity.distanceKm,
@@ -312,7 +336,30 @@ function toDateComparisonActivityFact(
     hrText: formatHeartRate(activity.avgHr),
     asc: activity.ascentM,
     ascText: formatElevation(activity.ascentM, unitSystem),
+    ...(label === undefined ? {} : { label }),
   };
+}
+
+function extractWorkoutLabel(rawCsvRow: Activity["rawCsvRow"]): WorkoutLabel | undefined {
+  const text = [rawCsvRow.Title]
+    .map(optionalText)
+    .filter((value): value is string => value !== undefined)
+    .join(" ")
+    .toLowerCase();
+
+  if (/\blong[\s-]+run\b/.test(text)) {
+    return "long run";
+  }
+
+  if (/\btempo\b/.test(text)) {
+    return "tempo";
+  }
+
+  if (/\b(intervals?|repeats?)\b/.test(text)) {
+    return "intervals";
+  }
+
+  return undefined;
 }
 
 function buildDeltaText(
@@ -327,6 +374,91 @@ function buildDeltaText(
     hr: delta.hr === null ? null : formatSignedWholeNumberDelta(delta.hr, "bpm"),
     asc:
       delta.asc === null ? null : formatSignedElevationDelta(delta.asc, unitSystem),
+  };
+}
+
+function buildTerrainComparison(
+  focus: DateComparisonActivityFact,
+  baseline: DateComparisonActivityFact,
+  delta: DateComparisonFacts["delta"],
+  unitSystem: UnitSystem,
+): DateComparisonFacts["terrain"] | undefined {
+  if (delta.asc === null || focus.asc === null || baseline.asc === null) {
+    return undefined;
+  }
+
+  const deltaFeet = delta.asc * 3.28084;
+  const averageDistanceMiles = ((focus.dist + baseline.dist) / 2) * 0.621371;
+
+  if (averageDistanceMiles <= 0) {
+    return undefined;
+  }
+
+  const deltaFeetPerMile = deltaFeet / averageDistanceMiles;
+
+  if (Math.abs(deltaFeet) < 100 || Math.abs(deltaFeetPerMile) < 25) {
+    return undefined;
+  }
+
+  const hillier = delta.asc > 0 ? "focus" : "baseline";
+  const deltaText = formatSignedElevationDelta(delta.asc, unitSystem);
+  const deltaPerMileText = formatSignedElevationPerMileDelta(
+    deltaFeetPerMile,
+    unitSystem,
+  );
+  const hillierDate = hillier === "focus" ? focus.d : baseline.d;
+  const slowerHillierFocus =
+    hillier === "focus" &&
+    focus.pace !== null &&
+    baseline.pace !== null &&
+    focus.pace > baseline.pace;
+  const hint = slowerHillierFocus
+    ? `${hillierDate} was materially hillier (${deltaText}, ${deltaPerMileText}), so slower pace alone should not be read as worse fitness or worse effort.`
+    : `${hillierDate} was materially hillier (${deltaText}, ${deltaPerMileText}), so terrain should protect the pace interpretation.`;
+
+  return {
+    material: true,
+    hillier,
+    deltaText,
+    deltaPerMileText,
+    hint,
+  };
+}
+
+function buildWorkoutLabelComparison(
+  focus: DateComparisonActivityFact,
+  baseline: DateComparisonActivityFact,
+): DateComparisonFacts["workoutLabels"] | undefined {
+  if (focus.label === undefined && baseline.label === undefined) {
+    return undefined;
+  }
+
+  const focusLabel = focus.label ?? null;
+  const baselineLabel = baseline.label ?? null;
+
+  if (focusLabel !== null && baselineLabel !== null && focusLabel !== baselineLabel) {
+    return {
+      focus: focusLabel,
+      baseline: baselineLabel,
+      hint: `Use the explicit workout labels: ${focus.d} is labeled ${focusLabel} and ${baseline.d} is labeled ${baselineLabel}. Do not compare them as the same workout intent.`,
+    };
+  }
+
+  if (focusLabel !== null && baselineLabel !== null) {
+    return {
+      focus: focusLabel,
+      baseline: baselineLabel,
+      hint: `Both runs are explicitly labeled ${focusLabel}; use that workout label only when it materially affects the comparison.`,
+    };
+  }
+
+  const labeledDate = focusLabel === null ? baseline.d : focus.d;
+  const label = focusLabel ?? baselineLabel;
+
+  return {
+    focus: focusLabel,
+    baseline: baselineLabel,
+    hint: `${labeledDate} is explicitly labeled ${label}; use that label when relevant and do not infer workout intent for the unlabeled run.`,
   };
 }
 
@@ -361,6 +493,23 @@ function formatSignedElevationDelta(deltaMeters: number, unitSystem: UnitSystem)
   const unit = unitSystem === "imperial" ? "ft" : "m";
 
   return `${formatSign(value)}${Math.round(Math.abs(value))} ${unit}`;
+}
+
+function formatSignedElevationPerMileDelta(
+  deltaFeetPerMile: number,
+  unitSystem: UnitSystem,
+): string {
+  if (unitSystem === "imperial") {
+    return `${formatSign(deltaFeetPerMile)}${Math.round(
+      Math.abs(deltaFeetPerMile),
+    )} ft/mi`;
+  }
+
+  const deltaMetersPerKm = deltaFeetPerMile / 3.28084 / 1.609344;
+
+  return `${formatSign(deltaMetersPerKm)}${Math.round(
+    Math.abs(deltaMetersPerKm),
+  )} m/km`;
 }
 
 function formatSignedPaceDelta(deltaSecondsPerKm: number, unitSystem: UnitSystem): string {
@@ -464,7 +613,17 @@ function parseMonth(value: string): number | undefined {
 function buildExplanationHint(
   focus: DateComparisonActivityFact,
   baseline: DateComparisonActivityFact,
+  terrain: DateComparisonFacts["terrain"] | undefined,
 ): string {
+  if (
+    terrain?.hillier === "focus" &&
+    focus.pace !== null &&
+    baseline.pace !== null &&
+    focus.pace > baseline.pace
+  ) {
+    return terrain.hint;
+  }
+
   if (
     focus.dur > baseline.dur &&
     focus.dist < baseline.dist &&
