@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { ChatInput } from "./chat-input";
 import { type ChatMessage, MessageList } from "./message-list";
@@ -31,6 +31,19 @@ export function ChatPanel() {
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (messages.length === 0 && !error) {
+      return;
+    }
+
+    const scrollAnchor = scrollAnchorRef.current;
+
+    if (typeof scrollAnchor?.scrollIntoView === "function") {
+      scrollAnchor.scrollIntoView({ block: "end" });
+    }
+  }, [messages, error, streamingMessageId]);
 
   async function submitMessage(message: string) {
     const trimmedMessage = message.trim();
@@ -106,6 +119,7 @@ export function ChatPanel() {
         />
 
         {error ? <p className="text-sm font-medium text-red-700">{error}</p> : null}
+        <div ref={scrollAnchorRef} />
       </div>
 
       <ChatInput

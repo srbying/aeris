@@ -5,6 +5,7 @@ import { ChatPanel } from "./chat-panel";
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
 });
 
 function streamingResponse(events: Array<Record<string, unknown>>): Response {
@@ -55,6 +56,17 @@ function pendingStreamingResponse(): {
       streamController?.close();
     },
   };
+}
+
+function mockScrollIntoView(): ReturnType<typeof vi.fn> {
+  const scrollIntoView = vi.fn();
+
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+    configurable: true,
+    value: scrollIntoView,
+  });
+
+  return scrollIntoView;
 }
 
 describe("ChatPanel", () => {
@@ -126,6 +138,34 @@ describe("ChatPanel", () => {
     expect(threadEntries[0]?.textContent).toContain("You");
     expect(threadEntries[1]?.textContent).toContain("Aeris");
     expect(threadEntries[1]?.textContent).toContain("Aeris is reading the run history...");
+
+    stream.send({ done: true });
+    stream.close();
+  });
+
+  it("scrolls to the bottom as assistant content streams", async () => {
+    const stream = pendingStreamingResponse();
+    const scrollIntoView = mockScrollIntoView();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(stream.response);
+
+    render(<ChatPanel />);
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Compare this month to last month" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Compare this month to last month")).toBeTruthy();
+    });
+
+    scrollIntoView.mockClear();
+    stream.send({ delta: "You are trending faster." });
+
+    await waitFor(() => {
+      expect(screen.getByText("You are trending faster.")).toBeTruthy();
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: "end" });
+    });
 
     stream.send({ done: true });
     stream.close();
