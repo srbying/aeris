@@ -166,9 +166,46 @@ describe("chat context serialization", () => {
         vo2: 49,
         eff: 0.0192,
         title: "Avon Lake - W03D7-Long Run",
+        label: "long run",
         moving: 4801,
         elapsed: 4804,
       },
+    ]);
+  });
+
+  it("serializes explicit workout labels from Garmin titles without inferring from pace", () => {
+    const serialized = serializeActivitiesForPrompt(
+      [
+        activity({
+          id: "long-run",
+          activityDate: "2026-05-01T08:00:00.000Z",
+          rawCsvRow: { Title: "Morning Long Run" },
+        }),
+        activity({
+          id: "tempo",
+          activityDate: "2026-05-02T08:00:00.000Z",
+          rawCsvRow: { Title: "Lunch Tempo" },
+        }),
+        activity({
+          id: "intervals",
+          activityDate: "2026-05-03T08:00:00.000Z",
+          rawCsvRow: { Title: "Track Intervals" },
+        }),
+        activity({
+          id: "fast-unlabeled",
+          activityDate: "2026-05-04T08:00:00.000Z",
+          avgPaceSecPerKm: 240,
+          rawCsvRow: { Title: "Fast 5K" },
+        }),
+      ],
+      { months: 12, now },
+    );
+
+    expect(serialized.map((row) => ({ d: row.d, label: row.label }))).toEqual([
+      { d: "2026-05-01", label: "long run" },
+      { d: "2026-05-02", label: "tempo" },
+      { d: "2026-05-03", label: "intervals" },
+      { d: "2026-05-04", label: undefined },
     ]);
   });
 
@@ -284,6 +321,86 @@ describe("chat context serialization", () => {
     expect(context.dateComparisonFactsJson).toContain('"dur":4804');
     expect(context.dateComparisonFactsJson).toContain('"durText":"1:20:04"');
     expect(context.dateComparisonFactsJson).toContain('"paceText":"7:13 /mi"');
+  });
+
+  it("adds material terrain and workout label hints for explicit date comparisons", async () => {
+    const repository = {
+      getActivities: vi.fn().mockResolvedValue([]),
+      getRecentActivities: vi.fn().mockResolvedValue([
+        activity({
+          activityDate: "2026-05-09T08:00:00.000Z",
+          distanceKm: 10,
+          durationSeconds: 3300,
+          avgPaceSecPerKm: 330,
+          avgHr: 146,
+          ascentM: 20,
+          rawCsvRow: { Title: "Saturday Tempo" },
+        }),
+        activity({
+          activityDate: "2026-05-17T08:00:00.000Z",
+          distanceKm: 10,
+          durationSeconds: 3600,
+          avgPaceSecPerKm: 360,
+          avgHr: 148,
+          ascentM: 70,
+          rawCsvRow: { Title: "Morning Long Run" },
+        }),
+      ]),
+      insertActivities: vi.fn(),
+    } satisfies ActivityRepository;
+
+    const context = await buildChatContext({
+      repository,
+      now,
+      question: "Compare May 17, 2026 with May 9, 2026.",
+    });
+
+    expect(context.dateComparisonFacts?.focus.label).toBe("long run");
+    expect(context.dateComparisonFacts?.baseline.label).toBe("tempo");
+    expect(context.dateComparisonFacts?.terrain).toEqual({
+      material: true,
+      hillier: "focus",
+      deltaText: "+164 ft",
+      deltaPerMileText: "+26 ft/mi",
+      hint:
+        "2026-05-17 was materially hillier (+164 ft, +26 ft/mi), so slower pace alone should not be read as worse fitness or worse effort.",
+    });
+    expect(context.dateComparisonFacts?.workoutLabels).toEqual({
+      focus: "long run",
+      baseline: "tempo",
+      hint:
+        "Use the explicit workout labels: 2026-05-17 is labeled long run and 2026-05-09 is labeled tempo. Do not compare them as the same workout intent.",
+    });
+    expect(context.dateComparisonFacts?.explanationHint).toContain(
+      "slower pace alone should not be read as worse fitness or worse effort",
+    );
+  });
+
+  it("does not add terrain hints for small elevation differences", async () => {
+    const repository = {
+      getActivities: vi.fn().mockResolvedValue([]),
+      getRecentActivities: vi.fn().mockResolvedValue([
+        activity({
+          activityDate: "2026-05-09T08:00:00.000Z",
+          distanceKm: 10,
+          ascentM: 20,
+        }),
+        activity({
+          activityDate: "2026-05-17T08:00:00.000Z",
+          distanceKm: 10,
+          ascentM: 40,
+        }),
+      ]),
+      insertActivities: vi.fn(),
+    } satisfies ActivityRepository;
+
+    const context = await buildChatContext({
+      repository,
+      now,
+      question: "Compare May 17, 2026 with May 9, 2026.",
+    });
+
+    expect(context.dateComparisonFacts?.terrain).toBeUndefined();
   });
 
   it("detects raw-number and older-run drilldown intent from follow-up wording", async () => {
@@ -570,7 +687,7 @@ describe("Aeris prompt builder", () => {
       },
     });
 
-    expect(PROMPT_VERSION).toBe("v1.3");
+    expect(PROMPT_VERSION).toBe("v1.4");
     expect(prompt).toContain("Normal first-pass answers stay pattern-first");
     expect(prompt).toContain("Raw-number drilldown requested: true");
     expect(prompt).toContain("Older-run reference drilldown requested: true");
@@ -614,7 +731,7 @@ describe("Aeris prompt builder", () => {
       drilldownIntent: noDrilldownIntent(),
     });
 
-    expect(PROMPT_VERSION).toBe("v1.3");
+    expect(PROMPT_VERSION).toBe("v1.4");
     expect(prompt).toContain(
       'For same-heart-rate trend questions like "Am I getting faster at the same heart rate?"',
     );
