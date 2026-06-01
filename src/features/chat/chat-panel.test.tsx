@@ -2,10 +2,24 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "./chat-panel";
 
+const originalScrollIntoViewDescriptor = Reflect.getOwnPropertyDescriptor(
+  HTMLElement.prototype,
+  "scrollIntoView",
+);
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+
+  if (originalScrollIntoViewDescriptor) {
+    Reflect.defineProperty(
+      HTMLElement.prototype,
+      "scrollIntoView",
+      originalScrollIntoViewDescriptor,
+    );
+  } else {
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+  }
 });
 
 function streamingResponse(events: Array<Record<string, unknown>>): Response {
