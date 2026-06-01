@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { ChatInput } from "./chat-input";
 import { type ChatMessage, MessageList } from "./message-list";
 
 type ChatStatus = "idle" | "streaming";
 
+const MAX_CHAT_HISTORY_MESSAGES = 10;
 const StreamEventSchema = z
   .object({
     delta: z.string().optional(),
     done: z.boolean().optional(),
     error: z.string().optional(),
+    suggestions: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -24,12 +26,30 @@ const STARTER_PROMPTS = [
   "How has my VO2 max changed over 6 months?",
 ];
 
+const MAX_EXCLUDED_SUGGESTIONS = 20;
+const MAX_FOLLOW_UP_PROMPTS = 3;
+
 export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<ChatStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [followUpPrompts, setFollowUpPrompts] = useState<string[]>([]);
+  const shownSuggestionHistoryRef = useRef<string[]>([]);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (messages.length === 0 && !error) {
+      return;
+    }
+
+    const scrollAnchor = scrollAnchorRef.current;
+
+    if (typeof scrollAnchor?.scrollIntoView === "function") {
+      scrollAnchor.scrollIntoView({ block: "end" });
+    }
+  }, [messages, error, streamingMessageId, followUpPrompts]);
 
   async function submitMessage(message: string) {
     const trimmedMessage = message.trim();
@@ -46,12 +66,17 @@ export function ChatPanel() {
     setStatus("streaming");
     setStreamingMessageId(assistantMessage.id);
     setError(null);
+    setFollowUpPrompts([]);
 
     try {
       const streamError = await sendChatMessage({
+        excludedSuggestions: shownSuggestionHistoryRef.current.slice(-MAX_EXCLUDED_SUGGESTIONS),
         message: trimmedMessage,
         history,
-        onDelta: (delta) => appendAssistantDelta(assistantMessage.id, delta),
+        onDelta: (delta) => {
+          appendAssistantDelta(assistantMessage.id, delta);
+        },
+        onSuggestions: showFollowUpPrompts,
       });
 
       if (streamError) {
@@ -75,6 +100,22 @@ export function ChatPanel() {
     );
   }
 
+  function showFollowUpPrompts(suggestions: string[]) {
+    const prompts = uniquePrompts(suggestions, shownSuggestionHistoryRef.current).slice(
+      0,
+      MAX_FOLLOW_UP_PROMPTS,
+    );
+
+    setFollowUpPrompts(prompts);
+
+    if (prompts.length > 0) {
+      shownSuggestionHistoryRef.current = uniquePromptHistory([
+        ...shownSuggestionHistoryRef.current,
+        ...prompts,
+      ]).slice(-MAX_EXCLUDED_SUGGESTIONS);
+    }
+  }
+
   return (
     <section
       aria-label="Aeris chat window"
@@ -91,9 +132,10 @@ export function ChatPanel() {
 
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto bg-zinc-50/70 px-4 py-5 sm:px-6">
         {messages.length === 0 ? (
-          <StarterPromptButtons
+          <SuggestedPromptButtons
             disabled={status === "streaming"}
             onSelect={(prompt) => void submitMessage(prompt)}
+            prompts={STARTER_PROMPTS}
           />
         ) : null}
 
@@ -105,6 +147,14 @@ export function ChatPanel() {
         />
 
         {error ? <p className="text-sm font-medium text-red-700">{error}</p> : null}
+        {followUpPrompts.length > 0 && status === "idle" ? (
+          <SuggestedPromptButtons
+            disabled={false}
+            onSelect={(prompt) => void submitMessage(prompt)}
+            prompts={followUpPrompts}
+          />
+        ) : null}
+        <div ref={scrollAnchorRef} />
       </div>
 
       <ChatInput
@@ -138,22 +188,25 @@ function createChatExchange(content: string): {
 function buildChatHistory(messages: ChatMessage[]): ChatHistoryMessage[] {
   return messages
     .filter((message) => message.content.trim().length > 0)
+    .slice(-MAX_CHAT_HISTORY_MESSAGES)
     .map(({ role, content }) => ({ role, content }));
 }
 
-function StarterPromptButtons({
+function SuggestedPromptButtons({
   disabled,
   onSelect,
+  prompts,
 }: {
   disabled: boolean;
   onSelect(prompt: string): void;
+  prompts: string[];
 }) {
   return (
     <div
-      aria-label="Starter prompts"
+      aria-label="Suggested prompts"
       className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible sm:pb-0"
     >
-      {STARTER_PROMPTS.map((prompt) => (
+      {prompts.map((prompt) => (
         <button
           aria-label={`Quick reply: ${prompt}`}
           className="shrink-0 rounded-md border border-zinc-200 bg-white px-4 py-2 text-left text-sm font-medium leading-5 text-zinc-800 shadow-sm shadow-zinc-200/70 transition-[border-color,box-shadow,color] duration-200 hover:border-sky-400 hover:text-zinc-950 hover:shadow-sky-100 focus-visible:border-sky-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-100 disabled:cursor-not-allowed disabled:text-zinc-400 motion-reduce:transition-none"
@@ -169,19 +222,53 @@ function StarterPromptButtons({
   );
 }
 
+function uniquePrompts(prompts: string[], excludedPrompts: string[] = []): string[] {
+  const seen = new Set(excludedPrompts.map(normalizePrompt));
+
+  return prompts.filter((prompt) => {
+    const trimmedPrompt = prompt.trim();
+    const key = normalizePrompt(trimmedPrompt);
+
+    if (trimmedPrompt.length === 0 || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+}
+
+function uniquePromptHistory(prompts: string[]): string[] {
+  return uniquePrompts(prompts);
+}
+
+function normalizePrompt(prompt: string): string {
+  return prompt.trim().toLowerCase();
+}
+
 async function sendChatMessage({
+  excludedSuggestions,
   message,
   history,
   onDelta,
+  onSuggestions,
 }: {
+  excludedSuggestions: string[];
   message: string;
   history: ChatHistoryMessage[];
   onDelta(delta: string): void;
+  onSuggestions(suggestions: string[]): void;
 }): Promise<string | null> {
+  const payload = {
+    message,
+    history,
+    ...(excludedSuggestions.length > 0 ? { excludedSuggestions } : {}),
+  };
+
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -195,6 +282,10 @@ async function sendChatMessage({
 
     if (event.error) {
       return event.error;
+    }
+
+    if (event.suggestions) {
+      onSuggestions(event.suggestions);
     }
 
     if (event.done) {

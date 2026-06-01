@@ -64,9 +64,10 @@ describe("AerisApp", () => {
     expect(primaryWorkspace.compareDocumentPosition(supportingEvidence)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(primaryWorkspace.className).toContain("max-w-[900px]");
+    expect(primaryWorkspace.className).toContain("max-w-6xl");
     expect(primaryWorkspace.className).toContain("min-h-[280px]");
-    expect(primaryWorkspace.className).toContain("h-[60vh]");
+    expect(primaryWorkspace.className).toContain("h-[78vh]");
+    expect(primaryWorkspace.className).toContain("lg:min-h-[620px]");
     expect(supportingEvidence.contains(evidenceTabs)).toBe(true);
     expect(primaryWorkspace.textContent).toContain("Aeris chat");
     expect(

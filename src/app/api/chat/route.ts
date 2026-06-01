@@ -14,6 +14,9 @@ export const dynamic = "force-dynamic";
 
 const MAX_CHAT_MESSAGE_LENGTH = 2000;
 const MAX_CHAT_HISTORY_MESSAGES = 10;
+const MAX_EXCLUDED_SUGGESTIONS = 20;
+const MAX_SUGGESTION_LENGTH = 160;
+const MAX_FOLLOW_UP_SUGGESTIONS = 3;
 const STREAM_INTERRUPTED_MESSAGE = "Response interrupted. Please retry your question.";
 
 const chatRequestSchema = z.object({
@@ -35,7 +38,27 @@ const chatRequestSchema = z.object({
     )
     .max(MAX_CHAT_HISTORY_MESSAGES, "history must include 10 messages or fewer")
     .default([]),
+  excludedSuggestions: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, "excluded suggestion is required")
+        .max(MAX_SUGGESTION_LENGTH, "excluded suggestion must be 160 characters or fewer"),
+    )
+    .max(
+      MAX_EXCLUDED_SUGGESTIONS,
+      "excludedSuggestions must include 20 suggestions or fewer",
+    )
+    .default([]),
 });
+
+const followUpSuggestionsSchema = z.union([
+  z.object({
+    suggestions: z.array(z.string()),
+  }),
+  z.array(z.string()),
+]);
 
 export async function POST(request: Request): Promise<Response> {
   const parsedRequest = await parseChatRequest(request);
@@ -82,7 +105,14 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    return streamSse(deltas);
+    return streamSse({
+      deltas,
+      excludedSuggestions: parsedRequest.data.excludedSuggestions,
+      history: parsedRequest.data.history,
+      provider,
+      question: parsedRequest.data.message,
+      signal: request.signal,
+    });
   } catch {
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },
@@ -114,14 +144,44 @@ async function parseChatRequest(
   }
 }
 
-function streamSse(deltas: AsyncIterable<string> | Iterable<string>): Response {
+function streamSse({
+  deltas,
+  excludedSuggestions,
+  history,
+  provider,
+  question,
+  signal,
+}: {
+  deltas: AsyncIterable<string> | Iterable<string>;
+  excludedSuggestions: string[];
+  history: LLMMessage[];
+  provider: ReturnType<typeof getChatProvider>;
+  question: string;
+  signal?: AbortSignal;
+}): Response {
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
+      let assistantAnswer = "";
+
       try {
         for await (const delta of deltas) {
+          assistantAnswer += delta;
           controller.enqueue(encoder.encode(toSseEvent({ delta })));
+        }
+
+        const suggestions = await generateFollowUpSuggestions({
+          answer: assistantAnswer,
+          excludedSuggestions,
+          history,
+          provider,
+          question,
+          signal,
+        });
+
+        if (suggestions.length > 0) {
+          controller.enqueue(encoder.encode(toSseEvent({ suggestions })));
         }
 
         controller.enqueue(encoder.encode(toSseEvent({ done: true })));
@@ -143,6 +203,150 @@ function streamSse(deltas: AsyncIterable<string> | Iterable<string>): Response {
   });
 }
 
-function toSseEvent(payload: Record<string, string | boolean>): string {
+async function generateFollowUpSuggestions({
+  answer,
+  excludedSuggestions,
+  history,
+  provider,
+  question,
+  signal,
+}: {
+  answer: string;
+  excludedSuggestions: string[];
+  history: LLMMessage[];
+  provider: ReturnType<typeof getChatProvider>;
+  question: string;
+  signal?: AbortSignal;
+}): Promise<string[]> {
+  if (answer.trim().length === 0) {
+    return [];
+  }
+
+  try {
+    const rawSuggestions = await collectStreamText(
+      provider.stream({
+        messages: buildFollowUpSuggestionMessages({
+          answer,
+          excludedSuggestions,
+          history,
+          question,
+        }),
+        signal,
+      }),
+    );
+
+    return parseFollowUpSuggestions(rawSuggestions, excludedSuggestions);
+  } catch {
+    return [];
+  }
+}
+
+function buildFollowUpSuggestionMessages({
+  answer,
+  excludedSuggestions,
+  history,
+  question,
+}: {
+  answer: string;
+  excludedSuggestions: string[];
+  history: LLMMessage[];
+  question: string;
+}): LLMMessage[] {
+  return [
+    {
+      role: "system",
+      content: [
+        "You generate concise follow-up questions for Aeris, a running analytics chat.",
+        "Return JSON only, with shape {\"suggestions\":[\"question 1\",\"question 2\",\"question 3\"]}.",
+        "Generate exactly 3 user-clickable follow-up questions when possible.",
+        "Use only the supplied conversation context. Do not invent run details.",
+        "Do not suggest coaching recommendations or training plans.",
+        "Do not repeat any excluded suggestion exactly.",
+      ].join("\n"),
+    },
+    {
+      role: "user",
+      content: JSON.stringify({
+        latestQuestion: question,
+        assistantAnswer: answer,
+        recentHistory: history.slice(-6),
+        excludedSuggestions,
+      }),
+    },
+  ];
+}
+
+async function collectStreamText(deltas: AsyncIterable<string> | Iterable<string>): Promise<string> {
+  let content = "";
+
+  for await (const delta of deltas) {
+    content += delta;
+  }
+
+  return content;
+}
+
+function parseFollowUpSuggestions(rawValue: string, excludedSuggestions: string[]): string[] {
+  const trimmedValue = rawValue.trim();
+
+  if (trimmedValue.length === 0) {
+    return [];
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(stripJsonFence(trimmedValue));
+    const suggestionResult = followUpSuggestionsSchema.safeParse(parsed);
+
+    if (!suggestionResult.success) {
+      return [];
+    }
+
+    const suggestions = Array.isArray(suggestionResult.data)
+      ? suggestionResult.data
+      : suggestionResult.data.suggestions;
+    const excluded = new Set(excludedSuggestions.map(normalizeSuggestion));
+    const seen = new Set<string>();
+
+    return suggestions
+      .map((suggestion) => suggestion.trim())
+      .filter((suggestion) => isAllowedSuggestion(suggestion, excluded, seen))
+      .slice(0, MAX_FOLLOW_UP_SUGGESTIONS);
+  } catch {
+    return [];
+  }
+}
+
+function stripJsonFence(value: string): string {
+  return value.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+}
+
+function isAllowedSuggestion(
+  suggestion: string,
+  excluded: Set<string>,
+  seen: Set<string>,
+): boolean {
+  const normalized = normalizeSuggestion(suggestion);
+
+  if (
+    suggestion.length === 0 ||
+    suggestion.length > MAX_SUGGESTION_LENGTH ||
+    excluded.has(normalized) ||
+    seen.has(normalized) ||
+    /\b(coach|coaching|training plan|workout plan|recommendation|recommend)\b/i.test(
+      suggestion,
+    )
+  ) {
+    return false;
+  }
+
+  seen.add(normalized);
+  return true;
+}
+
+function normalizeSuggestion(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function toSseEvent(payload: Record<string, string | boolean | string[]>): string {
   return `data: ${JSON.stringify(payload)}\n\n`;
 }
