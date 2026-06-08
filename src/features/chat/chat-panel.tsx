@@ -39,6 +39,8 @@ const STARTER_PROMPTS = [
 
 const MAX_EXCLUDED_SUGGESTIONS = 20;
 const MAX_FOLLOW_UP_PROMPTS = 3;
+const DEMO_FINISHED_MESSAGE =
+  "Public demo complete. Your conversation stays here, but new questions are paused.";
 
 export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -51,25 +53,17 @@ export function ChatPanel() {
     useState<DemoAllowanceStatus | null>(null);
   const shownSuggestionHistoryRef = useRef<string[]>([]);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const isDemoFinished = isDemoAllowanceFinished(demoAllowanceStatus);
+  const isChatInputDisabled = status === "streaming" || isDemoFinished;
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadDemoAllowanceStatus() {
-      try {
-        const response = await fetch("/api/demo-allowance/status");
+      const nextStatus = await readDemoAllowanceStatus();
 
-        if (!response.ok) {
-          return;
-        }
-
-        const parsedStatus = DemoAllowanceStatusSchema.safeParse(await response.json());
-
-        if (isMounted && parsedStatus.success) {
-          setDemoAllowanceStatus(parsedStatus.data);
-        }
-      } catch {
-        // Invalid or unavailable status keeps the chat UI unrestricted for this read-only slice.
+      if (isMounted && nextStatus) {
+        setDemoAllowanceStatus(nextStatus);
       }
     }
 
@@ -79,6 +73,14 @@ export function ChatPanel() {
       isMounted = false;
     };
   }, []);
+
+  async function refreshDemoAllowanceStatus() {
+    const nextStatus = await readDemoAllowanceStatus();
+
+    if (nextStatus) {
+      setDemoAllowanceStatus(nextStatus);
+    }
+  }
 
   useEffect(() => {
     if (messages.length === 0 && !error) {
@@ -95,7 +97,7 @@ export function ChatPanel() {
   async function submitMessage(message: string) {
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage || status === "streaming") {
+    if (!trimmedMessage || status === "streaming" || isDemoFinished) {
       return;
     }
 
@@ -123,8 +125,22 @@ export function ChatPanel() {
       if (streamError) {
         setError(streamError);
       }
+      await refreshDemoAllowanceStatus();
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Chat failed.");
+      if (caughtError instanceof ChatRequestError && caughtError.status === 429) {
+        setMessages((currentMessages) =>
+          currentMessages.filter(
+            (currentMessage) =>
+              currentMessage.id !== userMessage.id &&
+              currentMessage.id !== assistantMessage.id,
+          ),
+        );
+        setDemoAllowanceStatus(buildFinishedDemoAllowanceStatus(demoAllowanceStatus));
+        setError(null);
+        setFollowUpPrompts([]);
+      } else {
+        setError(caughtError instanceof Error ? caughtError.message : "Chat failed.");
+      }
     } finally {
       setStatus("idle");
       setStreamingMessageId(null);
@@ -181,7 +197,7 @@ export function ChatPanel() {
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto bg-zinc-50/70 px-4 py-5 sm:px-6">
         {messages.length === 0 ? (
           <SuggestedPromptButtons
-            disabled={status === "streaming"}
+            disabled={isChatInputDisabled}
             onSelect={(prompt) => void submitMessage(prompt)}
             prompts={STARTER_PROMPTS}
           />
@@ -195,9 +211,14 @@ export function ChatPanel() {
         />
 
         {error ? <p className="text-sm font-medium text-red-700">{error}</p> : null}
+        {isDemoFinished ? (
+          <p className="rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-zinc-700">
+            {DEMO_FINISHED_MESSAGE}
+          </p>
+        ) : null}
         {followUpPrompts.length > 0 && status === "idle" ? (
           <SuggestedPromptButtons
-            disabled={false}
+            disabled={isChatInputDisabled}
             onSelect={(prompt) => void submitMessage(prompt)}
             prompts={followUpPrompts}
           />
@@ -206,7 +227,7 @@ export function ChatPanel() {
       </div>
 
       <ChatInput
-        disabled={status === "streaming"}
+        disabled={isChatInputDisabled}
         value={draft}
         onChange={setDraft}
         onSubmit={() => void submitMessage(draft)}
@@ -294,9 +315,49 @@ function normalizePrompt(prompt: string): string {
   return prompt.trim().toLowerCase();
 }
 
+function isDemoAllowanceFinished(status: DemoAllowanceStatus | null): boolean {
+  return Boolean(status?.enabled && status.availability === "available" && status.exhausted);
+}
+
+function buildFinishedDemoAllowanceStatus(
+  status: DemoAllowanceStatus | null,
+): DemoAllowanceStatus {
+  return {
+    enabled: true,
+    limit: status?.limit ?? 1,
+    remaining: 0,
+    exhausted: true,
+    availability: "available",
+  };
+}
+
 function formatDemoAllowanceStatus(status: DemoAllowanceStatus): string {
+  if (status.availability === "unavailable") {
+    return "Public demo unavailable";
+  }
+
+  if (status.exhausted) {
+    return "Public demo complete";
+  }
+
   const turnLabel = status.remaining === 1 ? "turn" : "turns";
   return `Public demo: ${status.remaining} ${turnLabel} left`;
+}
+
+async function readDemoAllowanceStatus(): Promise<DemoAllowanceStatus | null> {
+  try {
+    const response = await fetch("/api/demo-allowance/status");
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const parsedStatus = DemoAllowanceStatusSchema.safeParse(await response.json());
+
+    return parsedStatus.success ? parsedStatus.data : null;
+  } catch {
+    return null;
+  }
 }
 
 async function sendChatMessage({
@@ -325,7 +386,7 @@ async function sendChatMessage({
   });
 
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+    throw new ChatRequestError(response.status, await readErrorMessage(response));
   }
 
   for await (const event of readSseEvents(response)) {
@@ -347,6 +408,16 @@ async function sendChatMessage({
   }
 
   return null;
+}
+
+class ChatRequestError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "ChatRequestError";
+    this.status = status;
+  }
 }
 
 async function readErrorMessage(response: Response): Promise<string> {

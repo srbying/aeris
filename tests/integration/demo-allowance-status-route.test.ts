@@ -90,6 +90,35 @@ describe("GET /api/demo-allowance/status", () => {
     });
   });
 
+  it("reports exhausted state for an exhausted visitor without setting a cookie", async () => {
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
+    vi.stubEnv("DEMO_CHAT_TURN_LIMIT", "1");
+    const repository = createInMemoryDemoAllowanceRepository();
+    await consumeDemoChatTurn({
+      env: {
+        DEMO_CHAT_ALLOWANCE_ENABLED: "true",
+        DEMO_CHAT_TURN_LIMIT: "1",
+      },
+      generateVisitorToken: () => "visitor-token",
+      repository,
+      visitorToken: "visitor-token",
+    });
+    setDemoAllowanceDependenciesForTests({ repository });
+
+    const response = await GET(requestWithCookie("aeris_demo_visitor=visitor-token"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(body).toEqual({
+      enabled: true,
+      limit: 1,
+      remaining: 0,
+      exhausted: true,
+      availability: "available",
+    });
+  });
+
   it("reports unavailable when existing visitor usage cannot be read", async () => {
     vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
     const repository = {

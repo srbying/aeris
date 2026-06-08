@@ -79,17 +79,17 @@ function demoAllowanceStatusResponse(
 }
 
 function mockFetchRoutes({
-  status = demoAllowanceStatusResponse(),
+  status = () => demoAllowanceStatusResponse(),
   chat,
 }: {
-  status?: Response;
+  status?: Response | (() => Response);
   chat(input: RequestInfo | URL, init?: RequestInit): Promise<Response> | Response;
 }) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const url = toFetchUrl(input);
 
     if (url === DEMO_ALLOWANCE_STATUS_URL) {
-      return Promise.resolve(status);
+      return Promise.resolve(typeof status === "function" ? status() : status);
     }
 
     return Promise.resolve(chat(input, init));
@@ -222,6 +222,42 @@ describe("ChatPanel", () => {
     expect(screen.queryByText(/public demo/i)).toBeNull();
   });
 
+  it("enters the demo finished state from exhausted status", async () => {
+    const fetchMock = mockFetchRoutes({
+      status: demoAllowanceStatusResponse({
+        enabled: true,
+        limit: 5,
+        remaining: 0,
+        exhausted: true,
+      }),
+      chat: () => streamingResponse([{ done: true }]),
+    });
+
+    render(<ChatPanel />);
+
+    expect(
+      await screen.findByText(
+        "Public demo complete. Your conversation stays here, but new questions are paused.",
+      ),
+    ).toBeTruthy();
+
+    const messageInput = screen.getByRole("textbox", {
+      name: /message/i,
+    }) as HTMLTextAreaElement;
+    const sendButton = screen.getByRole("button", { name: /send/i }) as HTMLButtonElement;
+    const starterPrompt = screen.getByRole("button", {
+      name: /quick reply: am i getting faster at the same heart rate/i,
+    }) as HTMLButtonElement;
+
+    expect(messageInput.disabled).toBe(true);
+    expect(sendButton.disabled).toBe(true);
+    expect(starterPrompt.disabled).toBe(true);
+
+    fireEvent.click(starterPrompt);
+
+    expect(chatFetchCalls(fetchMock)).toHaveLength(0);
+  });
+
   it("submits a message and streams assistant deltas into the thread", async () => {
     const fetchMock = mockChatResponses(
       streamingResponse([{ delta: "You are " }, { delta: "getting faster." }, { done: true }]),
@@ -333,6 +369,110 @@ describe("ChatPanel", () => {
         }),
       }),
     ]);
+  });
+
+  it("refreshes status after an accepted chat turn and keeps the conversation visible when finished", async () => {
+    let statusCalls = 0;
+    mockFetchRoutes({
+      status: () => {
+        statusCalls += 1;
+
+        return statusCalls === 1
+          ? demoAllowanceStatusResponse({
+              enabled: true,
+              limit: 1,
+              remaining: 1,
+            })
+          : demoAllowanceStatusResponse({
+              enabled: true,
+              limit: 1,
+              remaining: 0,
+              exhausted: true,
+            });
+      },
+      chat: () => streamingResponse([{ delta: "Final answer." }, { done: true }]),
+    });
+
+    render(<ChatPanel />);
+
+    expect(await screen.findByText("Public demo: 1 turn left")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Final question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Final answer.")).toBeTruthy();
+    });
+
+    expect(
+      await screen.findByText(
+        "Public demo complete. Your conversation stays here, but new questions are paused.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Final question")).toBeTruthy();
+    expect(screen.getByText("Final answer.")).toBeTruthy();
+    expect((screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("enters the finished state on a 429 while preserving the previous conversation", async () => {
+    let chatCalls = 0;
+    const fetchMock = mockFetchRoutes({
+      status: () =>
+        demoAllowanceStatusResponse({
+          enabled: true,
+          limit: 1,
+          remaining: 1,
+        }),
+      chat: () => {
+        chatCalls += 1;
+
+        return chatCalls === 1
+          ? streamingResponse([{ delta: "Allowed answer." }, { done: true }])
+          : new Response(
+              JSON.stringify({ error: "Public demo chat allowance is finished." }),
+              {
+                status: 429,
+                headers: { "Content-Type": "application/json" },
+              },
+            );
+      },
+    });
+
+    render(<ChatPanel />);
+
+    expect(await screen.findByText("Public demo: 1 turn left")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "First question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Allowed answer.")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Blocked question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(
+      await screen.findByText(
+        "Public demo complete. Your conversation stays here, but new questions are paused.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("First question")).toBeTruthy();
+    expect(screen.getByText("Allowed answer.")).toBeTruthy();
+    expect(screen.queryByText("Blocked question")).toBeNull();
+    expect(screen.queryByText("Public demo chat allowance is finished.")).toBeNull();
+    expect(chatFetchCalls(fetchMock)).toHaveLength(2);
+    expect((screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
   });
 
   it("shows a server error while preserving any partial streamed response", async () => {
