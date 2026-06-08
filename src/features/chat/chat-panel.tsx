@@ -17,7 +17,18 @@ const StreamEventSchema = z
   })
   .strict();
 
+const DemoAllowanceStatusSchema = z
+  .object({
+    enabled: z.boolean(),
+    limit: z.number().int().positive(),
+    remaining: z.number().int().nonnegative(),
+    exhausted: z.boolean(),
+    availability: z.enum(["available", "unavailable"]),
+  })
+  .strict();
+
 type StreamEvent = z.infer<typeof StreamEventSchema>;
+type DemoAllowanceStatus = z.infer<typeof DemoAllowanceStatusSchema>;
 type ChatHistoryMessage = Pick<ChatMessage, "role" | "content">;
 
 const STARTER_PROMPTS = [
@@ -36,8 +47,38 @@ export function ChatPanel() {
   const [error, setError] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [followUpPrompts, setFollowUpPrompts] = useState<string[]>([]);
+  const [demoAllowanceStatus, setDemoAllowanceStatus] =
+    useState<DemoAllowanceStatus | null>(null);
   const shownSuggestionHistoryRef = useRef<string[]>([]);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDemoAllowanceStatus() {
+      try {
+        const response = await fetch("/api/demo-allowance/status");
+
+        if (!response.ok) {
+          return;
+        }
+
+        const parsedStatus = DemoAllowanceStatusSchema.safeParse(await response.json());
+
+        if (isMounted && parsedStatus.success) {
+          setDemoAllowanceStatus(parsedStatus.data);
+        }
+      } catch {
+        // Invalid or unavailable status keeps the chat UI unrestricted for this read-only slice.
+      }
+    }
+
+    void loadDemoAllowanceStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (messages.length === 0 && !error) {
@@ -122,11 +163,18 @@ export function ChatPanel() {
       className="flex h-full min-h-[280px] w-full flex-col overflow-hidden rounded-lg border border-zinc-200/80 bg-white shadow-[0_18px_48px_rgba(15,23,42,0.08)]"
     >
       <div className="border-b border-zinc-200/80 bg-white px-4 py-4 sm:px-6">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold leading-6 text-zinc-950">Aeris chat</h2>
-          <p className="max-w-2xl text-sm leading-6 text-zinc-600">
-            Ask about trends, efforts, and what your runs say over time.
-          </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-1">
+            <h2 className="text-lg font-semibold leading-6 text-zinc-950">Aeris chat</h2>
+            <p className="max-w-2xl text-sm leading-6 text-zinc-600">
+              Ask about trends, efforts, and what your runs say over time.
+            </p>
+          </div>
+          {demoAllowanceStatus?.enabled ? (
+            <p className="text-xs font-medium leading-5 text-zinc-500">
+              {formatDemoAllowanceStatus(demoAllowanceStatus)}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -244,6 +292,11 @@ function uniquePromptHistory(prompts: string[]): string[] {
 
 function normalizePrompt(prompt: string): string {
   return prompt.trim().toLowerCase();
+}
+
+function formatDemoAllowanceStatus(status: DemoAllowanceStatus): string {
+  const turnLabel = status.remaining === 1 ? "turn" : "turns";
+  return `Public demo: ${status.remaining} ${turnLabel} left`;
 }
 
 async function sendChatMessage({

@@ -2,6 +2,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "./chat-panel";
 
+const DEMO_ALLOWANCE_STATUS_URL = "/api/demo-allowance/status";
+const CHAT_URL = "/api/chat";
+
 const originalScrollIntoViewDescriptor = Reflect.getOwnPropertyDescriptor(
   HTMLElement.prototype,
   "scrollIntoView",
@@ -39,6 +42,93 @@ function streamingResponse(events: Array<Record<string, unknown>>): Response {
       headers: { "Content-Type": "text/event-stream" },
     },
   );
+}
+
+type DemoAllowanceStatus = {
+  enabled: boolean;
+  limit: number;
+  remaining: number;
+  exhausted: boolean;
+  availability: "available" | "unavailable";
+};
+
+type FetchCall = Parameters<typeof fetch>;
+type FetchMock = {
+  mock: {
+    calls: FetchCall[];
+  };
+};
+
+function demoAllowanceStatusResponse(
+  overrides: Partial<DemoAllowanceStatus> = {},
+): Response {
+  return new Response(
+    JSON.stringify({
+      enabled: false,
+      limit: 5,
+      remaining: 5,
+      exhausted: false,
+      availability: "available",
+      ...overrides,
+    }),
+    {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    },
+  );
+}
+
+function mockFetchRoutes({
+  status = demoAllowanceStatusResponse(),
+  chat,
+}: {
+  status?: Response;
+  chat(input: RequestInfo | URL, init?: RequestInit): Promise<Response> | Response;
+}) {
+  return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const url = toFetchUrl(input);
+
+    if (url === DEMO_ALLOWANCE_STATUS_URL) {
+      return Promise.resolve(status);
+    }
+
+    return Promise.resolve(chat(input, init));
+  });
+}
+
+function mockChatResponses(...responses: Response[]) {
+  let responseIndex = 0;
+
+  return mockFetchRoutes({
+    chat: () => {
+      const response = responses[responseIndex];
+      responseIndex += 1;
+
+      return (
+        response ??
+        new Response(JSON.stringify({ error: "Unexpected chat request." }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    },
+  });
+}
+
+function chatFetchCalls(fetchMock: FetchMock): FetchCall[] {
+  return fetchMock.mock.calls.filter(([input]) => toFetchUrl(input) === CHAT_URL);
+}
+
+function toFetchUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  if (input instanceof Request) {
+    return input.url;
+  }
+
+  return input.toString();
 }
 
 function pendingStreamingResponse(): {
@@ -103,8 +193,37 @@ describe("ChatPanel", () => {
     expect(screen.getByRole("button", { name: /quick reply: which run had my best pace-to-HR ratio/i })).toBeTruthy();
   });
 
+  it("shows a subtle public demo allowance indicator when demo limiting is enabled", async () => {
+    mockFetchRoutes({
+      status: demoAllowanceStatusResponse({
+        enabled: true,
+        limit: 5,
+        remaining: 3,
+      }),
+      chat: () => streamingResponse([{ done: true }]),
+    });
+
+    render(<ChatPanel />);
+
+    expect(await screen.findByText("Public demo: 3 turns left")).toBeTruthy();
+  });
+
+  it("hides the demo allowance indicator when demo limiting is disabled", async () => {
+    const fetchMock = mockFetchRoutes({
+      status: demoAllowanceStatusResponse({ enabled: false }),
+      chat: () => streamingResponse([{ done: true }]),
+    });
+
+    render(<ChatPanel />);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(DEMO_ALLOWANCE_STATUS_URL);
+    });
+    expect(screen.queryByText(/public demo/i)).toBeNull();
+  });
+
   it("submits a message and streams assistant deltas into the thread", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    const fetchMock = mockChatResponses(
       streamingResponse([{ delta: "You are " }, { delta: "getting faster." }, { done: true }]),
     );
 
@@ -122,18 +241,18 @@ describe("ChatPanel", () => {
     });
     expect(screen.getByText("You")).toBeTruthy();
     expect(screen.getByText("Aeris")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(chatFetchCalls(fetchMock)[0]).toEqual([
       "/api/chat",
       expect.objectContaining({
         method: "POST",
         headers: { "Content-Type": "application/json" },
       }),
-    );
+    ]);
   });
 
   it("renders the assistant thinking state as the active thread entry", async () => {
     const stream = pendingStreamingResponse();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(stream.response);
+    mockChatResponses(stream.response);
 
     render(<ChatPanel />);
 
@@ -160,7 +279,7 @@ describe("ChatPanel", () => {
   it("scrolls to the bottom as assistant content streams", async () => {
     const stream = pendingStreamingResponse();
     const scrollIntoView = mockScrollIntoView();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(stream.response);
+    mockChatResponses(stream.response);
 
     render(<ChatPanel />);
 
@@ -186,7 +305,7 @@ describe("ChatPanel", () => {
   });
 
   it("submits a starter prompt through the same chat flow while keeping custom input available", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    const fetchMock = mockChatResponses(
       streamingResponse([{ delta: "Your aerobic efficiency is improving." }, { done: true }]),
     );
 
@@ -205,7 +324,7 @@ describe("ChatPanel", () => {
       expect(screen.getByText("Your aerobic efficiency is improving.")).toBeTruthy();
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
+    expect(chatFetchCalls(fetchMock)[0]).toEqual([
       "/api/chat",
       expect.objectContaining({
         body: JSON.stringify({
@@ -213,11 +332,11 @@ describe("ChatPanel", () => {
           history: [],
         }),
       }),
-    );
+    ]);
   });
 
   it("shows a server error while preserving any partial streamed response", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    mockChatResponses(
       streamingResponse([
         { delta: "Here is what I can tell so far." },
         { error: "Response interrupted. Here's what I had so far..." },
@@ -238,7 +357,7 @@ describe("ChatPanel", () => {
   });
 
   it("ignores SSE events that do not match the stream event shape", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    mockChatResponses(
       streamingResponse([{ delta: 123 }, { delta: "Valid answer." }, { done: true }]),
     );
 
@@ -255,9 +374,9 @@ describe("ChatPanel", () => {
   });
 
   it("does not send empty assistant placeholders in request history", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockImplementation(() => Promise.resolve(streamingResponse([{ done: true }])));
+    const fetchMock = mockFetchRoutes({
+      chat: () => streamingResponse([{ done: true }]),
+    });
 
     render(<ChatPanel />);
 
@@ -267,7 +386,7 @@ describe("ChatPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(chatFetchCalls(fetchMock)).toHaveLength(1);
     });
 
     fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
@@ -276,10 +395,10 @@ describe("ChatPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(chatFetchCalls(fetchMock)).toHaveLength(2);
     });
 
-    const [, secondRequest] = fetchMock.mock.calls[1];
+    const [, secondRequest] = chatFetchCalls(fetchMock)[1] ?? [];
     const body = JSON.parse(String(secondRequest?.body)) as {
       history: Array<{ role: string; content: string }>;
     };
@@ -288,15 +407,13 @@ describe("ChatPanel", () => {
   });
 
   it("sends prior assistant answers in request history for follow-up drilldowns", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
+    const fetchMock = mockChatResponses(
         streamingResponse([
           { delta: "**Directionally yes.** Recent similar-HR runs are faster." },
           { done: true },
         ]),
-      )
-      .mockResolvedValueOnce(streamingResponse([{ delta: "Raw details." }, { done: true }]));
+        streamingResponse([{ delta: "Raw details." }, { done: true }]),
+      );
 
     render(<ChatPanel />);
 
@@ -315,10 +432,10 @@ describe("ChatPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(chatFetchCalls(fetchMock)).toHaveLength(2);
     });
 
-    const [, secondRequest] = fetchMock.mock.calls[1];
+    const [, secondRequest] = chatFetchCalls(fetchMock)[1] ?? [];
     const body = JSON.parse(String(secondRequest?.body)) as {
       history: Array<{ role: string; content: string }>;
     };
@@ -333,7 +450,7 @@ describe("ChatPanel", () => {
   });
 
   it("shows server-generated follow-up prompts after an assistant response completes", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    mockChatResponses(
       streamingResponse([
         { delta: "**Directionally yes.** Your aerobic efficiency is improving." },
         {
@@ -374,9 +491,7 @@ describe("ChatPanel", () => {
   });
 
   it("sends a server follow-up prompt immediately with prior chat history and exclusions", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
+    const fetchMock = mockChatResponses(
         streamingResponse([
           { delta: "**Directionally yes.** Your aerobic efficiency is improving." },
           {
@@ -388,8 +503,8 @@ describe("ChatPanel", () => {
           },
           { done: true },
         ]),
-      )
-      .mockResolvedValueOnce(streamingResponse([{ delta: "Raw details." }, { done: true }]));
+        streamingResponse([{ delta: "Raw details." }, { done: true }]),
+      );
 
     render(<ChatPanel />);
 
@@ -404,10 +519,10 @@ describe("ChatPanel", () => {
     fireEvent.click(followUp);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(chatFetchCalls(fetchMock)).toHaveLength(2);
     });
 
-    const [, secondRequest] = fetchMock.mock.calls[1];
+    const [, secondRequest] = chatFetchCalls(fetchMock)[1] ?? [];
     const body = JSON.parse(String(secondRequest?.body)) as {
       message: string;
       excludedSuggestions: string[];
@@ -431,8 +546,7 @@ describe("ChatPanel", () => {
 
   it("hides follow-up prompts while streaming and replaces them after the next answer", async () => {
     const secondStream = pendingStreamingResponse();
-    vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
+    mockChatResponses(
         streamingResponse([
           { delta: "**Directionally yes.** Your aerobic efficiency is improving." },
           {
@@ -444,8 +558,8 @@ describe("ChatPanel", () => {
           },
           { done: true },
         ]),
-      )
-      .mockResolvedValueOnce(secondStream.response);
+        secondStream.response,
+      );
 
     render(<ChatPanel />);
 
@@ -488,9 +602,7 @@ describe("ChatPanel", () => {
   });
 
   it("dedupes repeated server follow-up suggestions already shown in this session", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
+    const fetchMock = mockChatResponses(
         streamingResponse([
           { delta: "First answer." },
           {
@@ -502,8 +614,6 @@ describe("ChatPanel", () => {
           },
           { done: true },
         ]),
-      )
-      .mockResolvedValueOnce(
         streamingResponse([
           { delta: "Second answer." },
           {
@@ -530,7 +640,7 @@ describe("ChatPanel", () => {
     fireEvent.click(firstPrompt);
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(chatFetchCalls(fetchMock)).toHaveLength(2);
     });
     await screen.findByRole("button", {
       name: /quick reply: which runs are driving that answer/i,
@@ -544,7 +654,7 @@ describe("ChatPanel", () => {
   });
 
   it("does not show follow-up prompts after an interrupted streamed response", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    mockChatResponses(
       streamingResponse([
         { delta: "Here is a partial efficiency answer." },
         { error: "Response interrupted. Please retry your question." },
@@ -569,7 +679,7 @@ describe("ChatPanel", () => {
   });
 
   it("does not show follow-up prompts after a failed request", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+    mockChatResponses(
       new Response(JSON.stringify({ error: "Upload your Garmin data to start chatting with Aeris." }), {
         status: 409,
         headers: { "Content-Type": "application/json" },
@@ -590,12 +700,12 @@ describe("ChatPanel", () => {
   });
 
   it("keeps follow-up history within the API cap while preserving the latest answer", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
+    const fetchMock = mockFetchRoutes({
+      chat: (_url, init) => {
       const body = JSON.parse(String(init?.body)) as { message: string };
 
-      return Promise.resolve(
-        streamingResponse([{ delta: `Answer for ${body.message}` }, { done: true }]),
-      );
+        return streamingResponse([{ delta: `Answer for ${body.message}` }, { done: true }]);
+      },
     });
 
     render(<ChatPanel />);
@@ -617,10 +727,10 @@ describe("ChatPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /send/i }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(7);
+      expect(chatFetchCalls(fetchMock)).toHaveLength(7);
     });
 
-    const [, finalRequest] = fetchMock.mock.calls[6];
+    const [, finalRequest] = chatFetchCalls(fetchMock)[6] ?? [];
     const body = JSON.parse(String(finalRequest?.body)) as {
       history: Array<{ role: string; content: string }>;
     };

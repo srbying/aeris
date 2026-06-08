@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PublicActivity } from "../../lib/activity/types";
 import { AerisApp } from "./aeris-app";
 
+const DEMO_ALLOWANCE_STATUS_URL = "/api/demo-allowance/status";
+const ACTIVITIES_URL = "/api/activities";
+const UPLOAD_URL = "/api/upload";
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -45,9 +49,74 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
+function mockAerisAppFetch({
+  activityResponses,
+  uploadResponse = { inserted: 1, skipped: 0, errors: [] },
+}: {
+  activityResponses: PublicActivity[][];
+  uploadResponse?: unknown;
+}) {
+  let activityResponseIndex = 0;
+
+  return vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+    const url = toFetchUrl(input);
+
+    if (url === DEMO_ALLOWANCE_STATUS_URL) {
+      return Promise.resolve(
+        jsonResponse({
+          enabled: false,
+          limit: 5,
+          remaining: 5,
+          exhausted: false,
+          availability: "available",
+        }),
+      );
+    }
+
+    if (url === ACTIVITIES_URL) {
+      const responseBody =
+        activityResponses[activityResponseIndex] ??
+        activityResponses[activityResponses.length - 1] ??
+        [];
+      activityResponseIndex += 1;
+
+      return Promise.resolve(jsonResponse(responseBody));
+    }
+
+    if (url === UPLOAD_URL) {
+      return Promise.resolve(jsonResponse(uploadResponse));
+    }
+
+    return Promise.resolve(
+      new Response(JSON.stringify({ error: "Unexpected request." }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  });
+}
+
+function nonStatusFetchUrls(fetchMock: { mock: { calls: Parameters<typeof fetch>[] } }): string[] {
+  return fetchMock.mock.calls
+    .map(([input]) => toFetchUrl(input))
+    .filter((url) => url !== DEMO_ALLOWANCE_STATUS_URL);
+}
+
+function toFetchUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") {
+    return input;
+  }
+
+  if (input instanceof Request) {
+    return input.url;
+  }
+
+  return input.toString();
+}
+
 describe("AerisApp", () => {
   it("stacks chat, evidence tabs, the default history panel, and hidden optional panels", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([activity()]));
+    mockAerisAppFetch({ activityResponses: [[activity()]] });
 
     render(<AerisApp />);
 
@@ -95,7 +164,7 @@ describe("AerisApp", () => {
   });
 
   it("switches from the default activity history tab to trend evidence", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([activity()]));
+    mockAerisAppFetch({ activityResponses: [[activity()]] });
 
     render(<AerisApp />);
 
@@ -121,11 +190,10 @@ describe("AerisApp", () => {
   });
 
   it("refreshes the dashboard after a successful CSV upload without a page reload", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse({ inserted: 1, skipped: 0, errors: [] }))
-      .mockResolvedValueOnce(jsonResponse([activity()]));
+    const fetchMock = mockAerisAppFetch({
+      activityResponses: [[], [activity()]],
+      uploadResponse: { inserted: 1, skipped: 0, errors: [] },
+    });
 
     const { container } = render(<AerisApp />);
 
@@ -156,8 +224,7 @@ describe("AerisApp", () => {
     await waitFor(() => {
       expect(screen.getByText("Trends from 1 uploaded activities.")).toBeTruthy();
     });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+    expect(nonStatusFetchUrls(fetchMock)).toEqual([
       "/api/activities",
       "/api/upload",
       "/api/activities",
