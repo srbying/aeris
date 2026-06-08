@@ -258,6 +258,43 @@ describe("ChatPanel", () => {
     expect(chatFetchCalls(fetchMock)).toHaveLength(0);
   });
 
+  it("enters the demo unavailable state from unavailable status", async () => {
+    const fetchMock = mockFetchRoutes({
+      status: demoAllowanceStatusResponse({
+        enabled: true,
+        remaining: 0,
+        exhausted: false,
+        availability: "unavailable",
+      }),
+      chat: () => streamingResponse([{ done: true }]),
+    });
+
+    render(<ChatPanel />);
+
+    expect(await screen.findByText("Public demo unavailable")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Public demo chat is temporarily unavailable. New questions are paused for now.",
+      ),
+    ).toBeTruthy();
+
+    const messageInput = screen.getByRole("textbox", {
+      name: /message/i,
+    }) as HTMLTextAreaElement;
+    const sendButton = screen.getByRole("button", { name: /send/i }) as HTMLButtonElement;
+    const starterPrompt = screen.getByRole("button", {
+      name: /quick reply: am i getting faster at the same heart rate/i,
+    }) as HTMLButtonElement;
+
+    expect(messageInput.disabled).toBe(true);
+    expect(sendButton.disabled).toBe(true);
+    expect(starterPrompt.disabled).toBe(true);
+
+    fireEvent.click(starterPrompt);
+
+    expect(chatFetchCalls(fetchMock)).toHaveLength(0);
+  });
+
   it("submits a message and streams assistant deltas into the thread", async () => {
     const fetchMock = mockChatResponses(
       streamingResponse([{ delta: "You are " }, { delta: "getting faster." }, { done: true }]),
@@ -470,6 +507,50 @@ describe("ChatPanel", () => {
     expect(screen.queryByText("Blocked question")).toBeNull();
     expect(screen.queryByText("Public demo chat allowance is finished.")).toBeNull();
     expect(chatFetchCalls(fetchMock)).toHaveLength(2);
+    expect((screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it("enters the unavailable state on a 503 while removing the pending exchange", async () => {
+    const fetchMock = mockFetchRoutes({
+      status: () =>
+        demoAllowanceStatusResponse({
+          enabled: true,
+          limit: 5,
+          remaining: 5,
+        }),
+      chat: () =>
+        new Response(
+          JSON.stringify({
+            error: "Public demo chat is temporarily unavailable. Please try again later.",
+          }),
+          {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+    });
+
+    render(<ChatPanel />);
+
+    expect(await screen.findByText("Public demo: 5 turns left")).toBeTruthy();
+
+    fireEvent.change(screen.getByRole("textbox", { name: /message/i }), {
+      target: { value: "Blocked question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    expect(
+      await screen.findByText(
+        "Public demo chat is temporarily unavailable. New questions are paused for now.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("Blocked question")).toBeNull();
+    expect(
+      screen.queryByText("Public demo chat is temporarily unavailable. Please try again later."),
+    ).toBeNull();
+    expect(chatFetchCalls(fetchMock)).toHaveLength(1);
     expect((screen.getByRole("textbox", { name: /message/i }) as HTMLTextAreaElement).disabled).toBe(
       true,
     );

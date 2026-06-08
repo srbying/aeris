@@ -21,6 +21,7 @@ export type DemoVisitorUsage = {
 };
 
 export type DemoAllowanceRepository = {
+  checkAvailability(): Promise<void>;
   consumeTurn(input: {
     limit: number;
     visitorKeyHash: string;
@@ -100,7 +101,7 @@ export async function readDemoAllowanceStatus({
   const limit = getDemoChatTurnLimit(env);
   const enabled = isDemoChatAllowanceEnabled(env);
 
-  if (!enabled || visitorToken === null || visitorToken.trim() === "") {
+  if (!enabled) {
     return {
       enabled,
       limit,
@@ -111,6 +112,18 @@ export async function readDemoAllowanceStatus({
   }
 
   try {
+    if (visitorToken === null || visitorToken.trim() === "") {
+      await repository.checkAvailability();
+
+      return {
+        enabled,
+        limit,
+        remaining: limit,
+        exhausted: false,
+        availability: "available",
+      };
+    }
+
     const usage = await repository.getUsageByVisitorToken(visitorToken);
 
     if (usage === null) {
@@ -228,6 +241,8 @@ export function createInMemoryDemoAllowanceRepository(): DemoAllowanceRepository
   const usageByVisitorKeyHash = new Map<string, DemoVisitorUsage>();
 
   return {
+    async checkAvailability() {},
+
     async consumeTurn({ limit, visitorKeyHash }) {
       const existingUsage = usageByVisitorKeyHash.get(visitorKeyHash);
 
@@ -265,6 +280,33 @@ export function createSupabaseDemoAllowanceRepository(
   env: DemoAllowanceEnvironment = process.env,
 ): DemoAllowanceRepository {
   return {
+    async checkAvailability() {
+      const config = getSupabaseDemoUsageConfig(env);
+      const searchParams = new URLSearchParams({
+        select: "visitor_key_hash",
+        limit: "1",
+      });
+      const response = await fetch(
+        `${config.url}/rest/v1/demo_visitor_usage?${searchParams.toString()}`,
+        {
+          headers: {
+            apikey: config.key,
+            Authorization: `Bearer ${config.key}`,
+          },
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to check demo visitor usage availability.");
+      }
+
+      const rows: unknown = await response.json();
+
+      if (!Array.isArray(rows)) {
+        throw new Error("Demo visitor usage availability response was malformed.");
+      }
+    },
+
     async consumeTurn({ limit, visitorKeyHash }) {
       const config = getSupabaseDemoUsageConfig(env);
       const response = await fetch(`${config.url}/rest/v1/rpc/consume_demo_chat_turn`, {

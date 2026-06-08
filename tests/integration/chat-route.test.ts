@@ -476,6 +476,53 @@ describe("POST /api/chat", () => {
     });
   });
 
+  it("returns unavailable before calling the provider when demo usage cannot be consumed", async () => {
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream: vi.fn(() => ["hello"]),
+    };
+    const demoRepository = {
+      async checkAvailability() {
+        throw new Error("storage down");
+      },
+      async consumeTurn() {
+        throw new Error("storage down");
+      },
+      async getUsageByVisitorToken() {
+        return null;
+      },
+    };
+    setDemoAllowanceDependenciesForTests({
+      generateVisitorToken: () => "visitor-token",
+      repository: demoRepository,
+    });
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Am I getting faster?",
+        history: [],
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(body.error).toBe(
+      "Public demo chat is temporarily unavailable. Please try again later.",
+    );
+    expect(provider.stream).not.toHaveBeenCalled();
+  });
+
   it("keeps follow-up suggestions working for allowed demo chat turns", async () => {
     vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
     vi.stubEnv("DEMO_CHAT_TURN_LIMIT", "2");
