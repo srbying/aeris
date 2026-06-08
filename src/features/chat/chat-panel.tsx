@@ -41,6 +41,8 @@ const MAX_EXCLUDED_SUGGESTIONS = 20;
 const MAX_FOLLOW_UP_PROMPTS = 3;
 const DEMO_FINISHED_MESSAGE =
   "Public demo complete. Your conversation stays here, but new questions are paused.";
+const DEMO_UNAVAILABLE_MESSAGE =
+  "Public demo chat is temporarily unavailable. New questions are paused for now.";
 
 export function ChatPanel() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -54,7 +56,8 @@ export function ChatPanel() {
   const shownSuggestionHistoryRef = useRef<string[]>([]);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
   const isDemoFinished = isDemoAllowanceFinished(demoAllowanceStatus);
-  const isChatInputDisabled = status === "streaming" || isDemoFinished;
+  const isDemoUnavailable = isDemoAllowanceUnavailable(demoAllowanceStatus);
+  const isChatInputDisabled = status === "streaming" || isDemoFinished || isDemoUnavailable;
 
   useEffect(() => {
     let isMounted = true;
@@ -97,7 +100,7 @@ export function ChatPanel() {
   async function submitMessage(message: string) {
     const trimmedMessage = message.trim();
 
-    if (!trimmedMessage || status === "streaming" || isDemoFinished) {
+    if (!trimmedMessage || status === "streaming" || isDemoFinished || isDemoUnavailable) {
       return;
     }
 
@@ -136,6 +139,17 @@ export function ChatPanel() {
           ),
         );
         setDemoAllowanceStatus(buildFinishedDemoAllowanceStatus(demoAllowanceStatus));
+        setError(null);
+        setFollowUpPrompts([]);
+      } else if (caughtError instanceof ChatRequestError && caughtError.status === 503) {
+        setMessages((currentMessages) =>
+          currentMessages.filter(
+            (currentMessage) =>
+              currentMessage.id !== userMessage.id &&
+              currentMessage.id !== assistantMessage.id,
+          ),
+        );
+        setDemoAllowanceStatus(buildUnavailableDemoAllowanceStatus(demoAllowanceStatus));
         setError(null);
         setFollowUpPrompts([]);
       } else {
@@ -214,6 +228,11 @@ export function ChatPanel() {
         {isDemoFinished ? (
           <p className="rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-zinc-700">
             {DEMO_FINISHED_MESSAGE}
+          </p>
+        ) : null}
+        {isDemoUnavailable ? (
+          <p className="rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm font-medium leading-6 text-zinc-700">
+            {DEMO_UNAVAILABLE_MESSAGE}
           </p>
         ) : null}
         {followUpPrompts.length > 0 && status === "idle" ? (
@@ -319,6 +338,10 @@ function isDemoAllowanceFinished(status: DemoAllowanceStatus | null): boolean {
   return Boolean(status?.enabled && status.availability === "available" && status.exhausted);
 }
 
+function isDemoAllowanceUnavailable(status: DemoAllowanceStatus | null): boolean {
+  return Boolean(status?.enabled && status.availability === "unavailable");
+}
+
 function buildFinishedDemoAllowanceStatus(
   status: DemoAllowanceStatus | null,
 ): DemoAllowanceStatus {
@@ -328,6 +351,18 @@ function buildFinishedDemoAllowanceStatus(
     remaining: 0,
     exhausted: true,
     availability: "available",
+  };
+}
+
+function buildUnavailableDemoAllowanceStatus(
+  status: DemoAllowanceStatus | null,
+): DemoAllowanceStatus {
+  return {
+    enabled: true,
+    limit: status?.limit ?? 1,
+    remaining: 0,
+    exhausted: false,
+    availability: "unavailable",
   };
 }
 

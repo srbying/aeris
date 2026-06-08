@@ -46,6 +46,16 @@ describe("GET /api/demo-allowance/status", () => {
   it("returns the configured allowance status when demo limiting is enabled", async () => {
     vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
     vi.stubEnv("DEMO_CHAT_TURN_LIMIT", "8");
+    const repository = {
+      checkAvailability: vi.fn(),
+      async consumeTurn() {
+        return { exhausted: false, remaining: 7, turnsUsed: 1 };
+      },
+      async getUsageByVisitorToken() {
+        return null;
+      },
+    };
+    setDemoAllowanceDependenciesForTests({ repository });
 
     const response = await GET();
     const body = await response.json();
@@ -59,6 +69,37 @@ describe("GET /api/demo-allowance/status", () => {
       exhausted: false,
       availability: "available",
     });
+    expect(repository.checkAvailability).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports unavailable when no-cookie demo usage availability cannot be checked", async () => {
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
+    const repository = {
+      checkAvailability: vi.fn(async () => {
+        throw new Error("storage down");
+      }),
+      async consumeTurn() {
+        return { exhausted: false, remaining: 4, turnsUsed: 1 };
+      },
+      async getUsageByVisitorToken() {
+        return null;
+      },
+    };
+    setDemoAllowanceDependenciesForTests({ repository });
+
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(body).toEqual({
+      enabled: true,
+      limit: 5,
+      remaining: 0,
+      exhausted: false,
+      availability: "unavailable",
+    });
+    expect(repository.checkAvailability).toHaveBeenCalledTimes(1);
   });
 
   it("reads existing visitor usage without setting a cookie", async () => {
@@ -122,6 +163,9 @@ describe("GET /api/demo-allowance/status", () => {
   it("reports unavailable when existing visitor usage cannot be read", async () => {
     vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
     const repository = {
+      async checkAvailability() {
+        throw new Error("storage down");
+      },
       async consumeTurn() {
         throw new Error("storage down");
       },

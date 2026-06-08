@@ -1,11 +1,12 @@
 // @vitest-environment node
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildReadOnlyDemoAllowanceStatus,
   consumeDemoChatTurn,
   createInMemoryDemoAllowanceRepository,
   demoAllowanceStatusSchema,
+  readDemoAllowanceStatus,
 } from "./demo-allowance";
 
 describe("read-only demo allowance status", () => {
@@ -55,6 +56,56 @@ describe("read-only demo allowance status", () => {
     });
 
     expect(parsed.availability).toBe("available");
+  });
+
+  it("does not check storage availability when demo limiting is disabled", async () => {
+    const repository = {
+      checkAvailability: vi.fn(),
+      consumeTurn: vi.fn(),
+      getUsageByVisitorToken: vi.fn(),
+    };
+
+    const status = await readDemoAllowanceStatus({
+      env: {},
+      repository,
+      visitorToken: null,
+    });
+
+    expect(status).toEqual({
+      enabled: false,
+      limit: 5,
+      remaining: 5,
+      exhausted: false,
+      availability: "available",
+    });
+    expect(repository.checkAvailability).not.toHaveBeenCalled();
+    expect(repository.getUsageByVisitorToken).not.toHaveBeenCalled();
+  });
+
+  it("returns unavailable when no visitor exists and storage availability cannot be checked", async () => {
+    const repository = {
+      checkAvailability: vi.fn(async () => {
+        throw new Error("storage down");
+      }),
+      consumeTurn: vi.fn(),
+      getUsageByVisitorToken: vi.fn(),
+    };
+
+    const status = await readDemoAllowanceStatus({
+      env: { DEMO_CHAT_ALLOWANCE_ENABLED: "true" },
+      repository,
+      visitorToken: null,
+    });
+
+    expect(status).toEqual({
+      enabled: true,
+      limit: 5,
+      remaining: 0,
+      exhausted: false,
+      availability: "unavailable",
+    });
+    expect(repository.checkAvailability).toHaveBeenCalledTimes(1);
+    expect(repository.getUsageByVisitorToken).not.toHaveBeenCalled();
   });
 
   it("does not create anonymous visitor state when demo limiting is disabled", async () => {
@@ -182,6 +233,9 @@ describe("read-only demo allowance status", () => {
 
   it("returns unavailable when demo usage storage cannot consume", async () => {
     const repository = {
+      async checkAvailability() {
+        throw new Error("storage down");
+      },
       async consumeTurn() {
         throw new Error("storage down");
       },
