@@ -2,13 +2,23 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { POST, runtime } from "../../src/app/api/chat/route";
+import {
+  consumeDemoChatTurn,
+  createInMemoryDemoAllowanceRepository,
+} from "../../src/lib/demo/demo-allowance";
+import {
+  resetDemoAllowanceDependenciesForTests,
+  setDemoAllowanceDependenciesForTests,
+} from "../../src/lib/demo/dependencies";
 import { resetChatDependenciesForTests, setChatDependenciesForTests } from "../../src/lib/llm/dependencies";
 import type { Activity } from "../../src/lib/activity/types";
 import type { LLMMessage, LLMStreamRequest } from "../../src/lib/llm/types";
 
 afterEach(() => {
   resetChatDependenciesForTests();
+  resetDemoAllowanceDependenciesForTests();
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 function chatRequest(body: unknown): Request {
@@ -25,6 +35,17 @@ function chatRequestWithSignal(body: unknown, signal: AbortSignal): Request {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal,
+  });
+}
+
+function chatRequestWithCookie(body: unknown, cookie: string): Request {
+  return new Request("http://aeris.test/api/chat", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Cookie: cookie,
+    },
+    body: JSON.stringify(body),
   });
 }
 
@@ -258,6 +279,249 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(409);
     expect(body.error).toBe("Upload your Garmin data to start chatting with Aeris.");
     expect(provider.stream).not.toHaveBeenCalled();
+  });
+
+  it("sets an opaque visitor cookie and consumes one turn for allowed demo chat", async () => {
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
+    vi.stubEnv("DEMO_CHAT_TURN_LIMIT", "3");
+    const demoRepository = createInMemoryDemoAllowanceRepository();
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream: vi.fn(() => ["hello"]),
+    };
+    setDemoAllowanceDependenciesForTests({
+      generateVisitorToken: () => "visitor-token",
+      repository: demoRepository,
+    });
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Am I getting faster?",
+        history: [],
+      }),
+    );
+    const body = await readStream(response);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie")).toContain(
+      "aeris_demo_visitor=visitor-token",
+    );
+    expect(response.headers.get("Set-Cookie")).toContain("HttpOnly");
+    expect(body).toContain('data: {"delta":"hello"}');
+    expect(provider.stream).toHaveBeenCalled();
+    await expect(demoRepository.getUsageByVisitorToken("visitor-token")).resolves.toMatchObject({
+      turnsUsed: 1,
+    });
+  });
+
+  it("reuses an existing visitor cookie without setting a replacement cookie", async () => {
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
+    const demoRepository = createInMemoryDemoAllowanceRepository();
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream: vi.fn(() => ["hello"]),
+    };
+    setDemoAllowanceDependenciesForTests({
+      generateVisitorToken: () => "unused-token",
+      repository: demoRepository,
+    });
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequestWithCookie(
+        {
+          message: "Am I getting faster?",
+          history: [],
+        },
+        "aeris_demo_visitor=existing-token",
+      ),
+    );
+    await readStream(response);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    await expect(demoRepository.getUsageByVisitorToken("existing-token")).resolves.toMatchObject({
+      turnsUsed: 1,
+    });
+  });
+
+  it("does not create demo usage for invalid chat requests", async () => {
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
+    const demoRepository = createInMemoryDemoAllowanceRepository();
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream: vi.fn(() => ["hello"]),
+    };
+    setDemoAllowanceDependenciesForTests({
+      generateVisitorToken: () => "visitor-token",
+      repository: demoRepository,
+    });
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(chatRequest({ message: "", history: [] }));
+
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(provider.stream).not.toHaveBeenCalled();
+    await expect(demoRepository.getUsageByVisitorToken("visitor-token")).resolves.toBeNull();
+  });
+
+  it("does not create demo usage for setup-blocked chat responses", async () => {
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
+    const demoRepository = createInMemoryDemoAllowanceRepository();
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream: vi.fn(() => ["hello"]),
+    };
+    setDemoAllowanceDependenciesForTests({
+      generateVisitorToken: () => "visitor-token",
+      repository: demoRepository,
+    });
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Am I getting faster?",
+        history: [],
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(provider.stream).not.toHaveBeenCalled();
+    await expect(demoRepository.getUsageByVisitorToken("visitor-token")).resolves.toBeNull();
+  });
+
+  it("rejects exhausted demo visitors before calling the provider", async () => {
+    const env = {
+      DEMO_CHAT_ALLOWANCE_ENABLED: "true",
+      DEMO_CHAT_TURN_LIMIT: "1",
+    };
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", env.DEMO_CHAT_ALLOWANCE_ENABLED);
+    vi.stubEnv("DEMO_CHAT_TURN_LIMIT", env.DEMO_CHAT_TURN_LIMIT);
+    const demoRepository = createInMemoryDemoAllowanceRepository();
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream: vi.fn(() => ["hello"]),
+    };
+    await consumeDemoChatTurn({
+      env,
+      generateVisitorToken: () => "visitor-token",
+      repository: demoRepository,
+      visitorToken: "visitor-token",
+    });
+    setDemoAllowanceDependenciesForTests({
+      generateVisitorToken: () => "unused-token",
+      repository: demoRepository,
+    });
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequestWithCookie(
+        {
+          message: "Am I getting faster?",
+          history: [],
+        },
+        "aeris_demo_visitor=visitor-token",
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.error).toBe("Public demo chat allowance is finished.");
+    expect(provider.stream).not.toHaveBeenCalled();
+    await expect(demoRepository.getUsageByVisitorToken("visitor-token")).resolves.toMatchObject({
+      turnsUsed: 1,
+    });
+  });
+
+  it("keeps follow-up suggestions working for allowed demo chat turns", async () => {
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
+    vi.stubEnv("DEMO_CHAT_TURN_LIMIT", "2");
+    const demoRepository = createInMemoryDemoAllowanceRepository();
+    const capturedRequests: LLMStreamRequest[] = [];
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream(request: LLMStreamRequest) {
+        capturedRequests.push(request);
+
+        if (capturedRequests.length === 1) {
+          return ["Allowed answer."];
+        }
+
+        return [JSON.stringify({ suggestions: ["Show the raw numbers."] })];
+      },
+    };
+    setDemoAllowanceDependenciesForTests({
+      generateVisitorToken: () => "visitor-token",
+      repository: demoRepository,
+    });
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequest({
+        message: "Am I getting faster?",
+        history: [],
+      }),
+    );
+    const body = await readStream(response);
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('data: {"delta":"Allowed answer."}');
+    expect(body).toContain('data: {"suggestions":["Show the raw numbers."]}');
+    expect(capturedRequests).toHaveLength(2);
+    await expect(demoRepository.getUsageByVisitorToken("visitor-token")).resolves.toMatchObject({
+      turnsUsed: 1,
+    });
   });
 
   it("returns a provider failure when OpenAI cannot start streaming", async () => {
