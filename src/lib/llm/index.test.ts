@@ -74,6 +74,29 @@ describe("OpenAI LLM provider", () => {
     );
   });
 
+  it("does not add a per-turn output token cap to OpenAI requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      streamingResponse([
+        'data: {"type":"response.output_text.delta","delta":"hello"}',
+        "data: [DONE]",
+      ]),
+    );
+    const provider = createOpenAIProvider({
+      apiKey: "test-key",
+      model: "gpt-5.5",
+      fetch: fetchMock,
+    });
+
+    await collect(provider.stream({ messages }));
+
+    const requestBody = JSON.parse(
+      String(fetchMock.mock.calls[0]?.[1]?.body),
+    ) as Record<string, unknown>;
+    expect(requestBody).not.toHaveProperty("max_output_tokens");
+    expect(requestBody).not.toHaveProperty("max_tokens");
+    expect(requestBody).not.toHaveProperty("max_completion_tokens");
+  });
+
   it("ignores OpenAI stream events that do not match the delta schema", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       streamingResponse([

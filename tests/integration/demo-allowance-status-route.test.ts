@@ -44,6 +44,17 @@ describe("GET /api/demo-allowance/status", () => {
     });
   });
 
+  it("does not expose OpenAI secrets in the public demo status response", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "server-openai-key");
+
+    const response = await GET();
+    const bodyText = JSON.stringify(await response.json());
+
+    expect(response.status).toBe(200);
+    expect(bodyText).not.toContain("OPENAI_API_KEY");
+    expect(bodyText).not.toContain("server-openai-key");
+  });
+
   it("returns the configured allowance status when demo limiting is enabled", async () => {
     vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
     vi.stubEnv("DEMO_CHAT_TURN_LIMIT", "8");
