@@ -14,6 +14,7 @@ describe("deployment health checks", () => {
       OPENAI_API_KEY: "server-key",
       LLM_PROVIDER: "openai",
       LLM_MODEL: "gpt-5.5",
+      RUNNER_OWNER_ACCESS_TOKEN: "owner-token",
       ACTIVITY_CONTEXT_MONTHS: "12",
     });
 

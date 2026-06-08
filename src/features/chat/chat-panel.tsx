@@ -19,6 +19,7 @@ const StreamEventSchema = z
 
 const DemoAllowanceStatusSchema = z
   .object({
+    access: z.enum(["anonymous_demo", "runner_owner"]),
     enabled: z.boolean(),
     limit: z.number().int().positive(),
     remaining: z.number().int().nonnegative(),
@@ -39,6 +40,8 @@ const STARTER_PROMPTS = [
 
 const MAX_EXCLUDED_SUGGESTIONS = 20;
 const MAX_FOLLOW_UP_PROMPTS = 3;
+const RUNNER_OWNER_ACCESS_FRAGMENT_KEY = "owner_access_token";
+const RUNNER_OWNER_ACCESS_URL = "/api/runner-owner/access";
 const DEMO_FINISHED_MESSAGE =
   "Public demo complete. Your conversation stays here, but new questions are paused.";
 const DEMO_UNAVAILABLE_MESSAGE =
@@ -62,7 +65,8 @@ export function ChatPanel() {
   useEffect(() => {
     let isMounted = true;
 
-    async function loadDemoAllowanceStatus() {
+    async function bootstrapChatAccessAndStatus() {
+      await claimRunnerOwnerAccessFromFragment();
       const nextStatus = await readDemoAllowanceStatus();
 
       if (isMounted && nextStatus) {
@@ -70,7 +74,7 @@ export function ChatPanel() {
       }
     }
 
-    void loadDemoAllowanceStatus();
+    void bootstrapChatAccessAndStatus();
 
     return () => {
       isMounted = false;
@@ -200,7 +204,7 @@ export function ChatPanel() {
               Ask about trends, efforts, and what your runs say over time.
             </p>
           </div>
-          {demoAllowanceStatus?.enabled ? (
+          {demoAllowanceStatus?.access === "runner_owner" || demoAllowanceStatus?.enabled ? (
             <p className="text-xs font-medium leading-5 text-zinc-500">
               {formatDemoAllowanceStatus(demoAllowanceStatus)}
             </p>
@@ -335,17 +339,27 @@ function normalizePrompt(prompt: string): string {
 }
 
 function isDemoAllowanceFinished(status: DemoAllowanceStatus | null): boolean {
-  return Boolean(status?.enabled && status.availability === "available" && status.exhausted);
+  return Boolean(
+    status?.access === "anonymous_demo" &&
+      status.enabled &&
+      status.availability === "available" &&
+      status.exhausted,
+  );
 }
 
 function isDemoAllowanceUnavailable(status: DemoAllowanceStatus | null): boolean {
-  return Boolean(status?.enabled && status.availability === "unavailable");
+  return Boolean(
+    status?.access === "anonymous_demo" &&
+      status.enabled &&
+      status.availability === "unavailable",
+  );
 }
 
 function buildFinishedDemoAllowanceStatus(
   status: DemoAllowanceStatus | null,
 ): DemoAllowanceStatus {
   return {
+    access: "anonymous_demo",
     enabled: true,
     limit: status?.limit ?? 1,
     remaining: 0,
@@ -358,6 +372,7 @@ function buildUnavailableDemoAllowanceStatus(
   status: DemoAllowanceStatus | null,
 ): DemoAllowanceStatus {
   return {
+    access: "anonymous_demo",
     enabled: true,
     limit: status?.limit ?? 1,
     remaining: 0,
@@ -367,6 +382,10 @@ function buildUnavailableDemoAllowanceStatus(
 }
 
 function formatDemoAllowanceStatus(status: DemoAllowanceStatus): string {
+  if (status.access === "runner_owner") {
+    return "Runner-owner access";
+  }
+
   if (status.availability === "unavailable") {
     return "Public demo unavailable";
   }
@@ -393,6 +412,58 @@ async function readDemoAllowanceStatus(): Promise<DemoAllowanceStatus | null> {
   } catch {
     return null;
   }
+}
+
+async function claimRunnerOwnerAccessFromFragment(): Promise<void> {
+  const token = readRunnerOwnerAccessTokenFromFragment();
+
+  if (token === null) {
+    return;
+  }
+
+  stripLocationFragment();
+
+  try {
+    await fetch(RUNNER_OWNER_ACCESS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+  } catch {
+    return;
+  }
+}
+
+function readRunnerOwnerAccessTokenFromFragment(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const fragment = window.location.hash.startsWith("#")
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+
+  if (fragment.length === 0) {
+    return null;
+  }
+
+  const token = new URLSearchParams(fragment)
+    .get(RUNNER_OWNER_ACCESS_FRAGMENT_KEY)
+    ?.trim();
+
+  return token && token.length > 0 ? token : null;
+}
+
+function stripLocationFragment(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.history.replaceState(
+    null,
+    document.title,
+    `${window.location.pathname}${window.location.search}`,
+  );
 }
 
 async function sendChatMessage({

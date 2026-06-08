@@ -21,6 +21,7 @@ const REQUIRED_ENVIRONMENT_KEYS: string[] = [
   "OPENAI_API_KEY",
   "LLM_PROVIDER",
   "LLM_MODEL",
+  "RUNNER_OWNER_ACCESS_TOKEN",
 ];
 
 export function validateDeploymentEnvironment(

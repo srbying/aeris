@@ -35,6 +35,7 @@ describe("GET /api/demo-allowance/status", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Set-Cookie")).toBeNull();
     expect(body).toEqual({
+      access: "anonymous_demo",
       enabled: false,
       limit: 5,
       remaining: 5,
@@ -63,6 +64,7 @@ describe("GET /api/demo-allowance/status", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Set-Cookie")).toBeNull();
     expect(body).toEqual({
+      access: "anonymous_demo",
       enabled: true,
       limit: 8,
       remaining: 8,
@@ -93,6 +95,7 @@ describe("GET /api/demo-allowance/status", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Set-Cookie")).toBeNull();
     expect(body).toEqual({
+      access: "anonymous_demo",
       enabled: true,
       limit: 5,
       remaining: 0,
@@ -123,6 +126,7 @@ describe("GET /api/demo-allowance/status", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Set-Cookie")).toBeNull();
     expect(body).toEqual({
+      access: "anonymous_demo",
       enabled: true,
       limit: 5,
       remaining: 4,
@@ -152,6 +156,7 @@ describe("GET /api/demo-allowance/status", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Set-Cookie")).toBeNull();
     expect(body).toEqual({
+      access: "anonymous_demo",
       enabled: true,
       limit: 1,
       remaining: 0,
@@ -181,11 +186,45 @@ describe("GET /api/demo-allowance/status", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Set-Cookie")).toBeNull();
     expect(body).toEqual({
+      access: "anonymous_demo",
       enabled: true,
       limit: 5,
       remaining: 0,
       exhausted: false,
       availability: "unavailable",
     });
+  });
+
+  it("reports runner-owner access without reading anonymous demo usage", async () => {
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
+    vi.stubEnv("DEMO_CHAT_TURN_LIMIT", "1");
+    vi.stubEnv("RUNNER_OWNER_ACCESS_TOKEN", "owner-token");
+    const repository = {
+      checkAvailability: vi.fn(),
+      async consumeTurn() {
+        return { exhausted: true, remaining: 0, turnsUsed: 1 };
+      },
+      getUsageByVisitorToken: vi.fn(),
+    };
+    setDemoAllowanceDependenciesForTests({ repository });
+
+    const response = await GET(
+      requestWithCookie(
+        "aeris_runner_owner_access=c32c7bb97d785c65916c05538cfc0f9d94768cb167eb73615071783ccc4bef77",
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      access: "runner_owner",
+      enabled: false,
+      limit: 1,
+      remaining: 1,
+      exhausted: false,
+      availability: "available",
+    });
+    expect(repository.checkAvailability).not.toHaveBeenCalled();
+    expect(repository.getUsageByVisitorToken).not.toHaveBeenCalled();
   });
 });

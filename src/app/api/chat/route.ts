@@ -17,6 +17,10 @@ import {
 import { buildAerisSystemPrompt } from "../../../lib/llm/prompts";
 import type { LLMMessage } from "../../../lib/llm/types";
 import { resolveDisplayUnitSystem } from "../../../lib/measurements/formatters";
+import {
+  hasRunnerOwnerAccess,
+  RUNNER_OWNER_ACCESS_COOKIE_NAME,
+} from "../../../lib/runner-owner/owner-access";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -96,13 +100,18 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    const demoTurnDecision = await consumeDemoChatTurn({
-      generateVisitorToken: generateDemoVisitorToken,
-      repository: getDemoAllowanceRepository(),
-      visitorToken: getCookieValue(request, DEMO_VISITOR_COOKIE_NAME),
+    const hasOwnerAccess = await hasRunnerOwnerAccess({
+      cookieValue: getCookieValue(request, RUNNER_OWNER_ACCESS_COOKIE_NAME),
     });
+    const demoTurnDecision = hasOwnerAccess
+      ? null
+      : await consumeDemoChatTurn({
+          generateVisitorToken: generateDemoVisitorToken,
+          repository: getDemoAllowanceRepository(),
+          visitorToken: getCookieValue(request, DEMO_VISITOR_COOKIE_NAME),
+        });
 
-    if (!demoTurnDecision.allowed) {
+    if (demoTurnDecision && !demoTurnDecision.allowed) {
       if (demoTurnDecision.reason === "exhausted") {
         return NextResponse.json(
           { error: "Public demo chat allowance is finished." },
@@ -132,7 +141,7 @@ export async function POST(request: Request): Promise<Response> {
         { error: "Aeris could not reach the AI provider. Please try again." },
         { status: 502 },
       );
-      applyDemoVisitorCookie(response, demoTurnDecision.visitorTokenToSet);
+      applyDemoVisitorCookie(response, demoTurnDecision?.visitorTokenToSet ?? null);
       return response;
     }
 
@@ -144,7 +153,7 @@ export async function POST(request: Request): Promise<Response> {
       question: parsedRequest.data.message,
       signal: request.signal,
     });
-    applyDemoVisitorCookie(response, demoTurnDecision.visitorTokenToSet);
+    applyDemoVisitorCookie(response, demoTurnDecision?.visitorTokenToSet ?? null);
     return response;
   } catch {
     return NextResponse.json(

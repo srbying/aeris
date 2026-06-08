@@ -476,6 +476,60 @@ describe("POST /api/chat", () => {
     });
   });
 
+  it("lets the runner-owner chat with an exhausted demo visitor cookie without consuming another demo turn", async () => {
+    const env = {
+      DEMO_CHAT_ALLOWANCE_ENABLED: "true",
+      DEMO_CHAT_TURN_LIMIT: "1",
+    };
+    vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", env.DEMO_CHAT_ALLOWANCE_ENABLED);
+    vi.stubEnv("DEMO_CHAT_TURN_LIMIT", env.DEMO_CHAT_TURN_LIMIT);
+    vi.stubEnv("RUNNER_OWNER_ACCESS_TOKEN", "owner-token");
+    const demoRepository = createInMemoryDemoAllowanceRepository();
+    const provider = {
+      id: "fake",
+      model: "fake-model",
+      stream: vi.fn(() => ["owner answer"]),
+    };
+    await consumeDemoChatTurn({
+      env,
+      generateVisitorToken: () => "visitor-token",
+      repository: demoRepository,
+      visitorToken: "visitor-token",
+    });
+    setDemoAllowanceDependenciesForTests({
+      generateVisitorToken: () => "unused-token",
+      repository: demoRepository,
+    });
+    setChatDependenciesForTests({
+      provider,
+      repository: {
+        getActivities: vi.fn().mockResolvedValue([]),
+        getRecentActivities: vi.fn().mockResolvedValue([activity()]),
+        insertActivities: vi.fn(),
+      },
+    });
+
+    const response = await POST(
+      chatRequestWithCookie(
+        {
+          message: "Am I getting faster?",
+          history: [],
+        },
+        "aeris_demo_visitor=visitor-token; aeris_runner_owner_access=c32c7bb97d785c65916c05538cfc0f9d94768cb167eb73615071783ccc4bef77",
+      ),
+    );
+    const body = await readStream(response);
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('data: {"delta":"owner answer"}');
+    expect(provider.stream).toHaveBeenCalled();
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    await expect(demoRepository.getUsageByVisitorToken("visitor-token")).resolves.toMatchObject({
+      turnsUsed: 1,
+    });
+    await expect(demoRepository.getUsageByVisitorToken("unused-token")).resolves.toBeNull();
+  });
+
   it("returns unavailable before calling the provider when demo usage cannot be consumed", async () => {
     vi.stubEnv("DEMO_CHAT_ALLOWANCE_ENABLED", "true");
     const provider = {

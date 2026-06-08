@@ -1,19 +1,42 @@
 import { NextResponse } from "next/server";
 import {
+  buildReadOnlyDemoAllowanceStatus,
   DEMO_VISITOR_COOKIE_NAME,
   readDemoAllowanceStatus,
 } from "../../../../lib/demo/demo-allowance";
 import { getDemoAllowanceRepository } from "../../../../lib/demo/dependencies";
+import {
+  hasRunnerOwnerAccess,
+  RUNNER_OWNER_ACCESS_COOKIE_NAME,
+} from "../../../../lib/runner-owner/owner-access";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request?: Request): Promise<Response> {
   try {
+    if (
+      await hasRunnerOwnerAccess({
+        cookieValue: getCookieValue(request, RUNNER_OWNER_ACCESS_COOKIE_NAME),
+      })
+    ) {
+      const anonymousStatus = buildReadOnlyDemoAllowanceStatus();
+      const response = NextResponse.json({
+        ...anonymousStatus,
+        access: "runner_owner",
+        enabled: false,
+      });
+      response.headers.set("Cache-Control", "no-store");
+      return response;
+    }
+
     const response = NextResponse.json(
-      await readDemoAllowanceStatus({
-        repository: getDemoAllowanceRepository(),
-        visitorToken: getCookieValue(request, DEMO_VISITOR_COOKIE_NAME),
-      }),
+      {
+        ...(await readDemoAllowanceStatus({
+          repository: getDemoAllowanceRepository(),
+          visitorToken: getCookieValue(request, DEMO_VISITOR_COOKIE_NAME),
+        })),
+        access: "anonymous_demo",
+      },
     );
     response.headers.set("Cache-Control", "no-store");
     return response;

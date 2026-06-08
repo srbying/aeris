@@ -64,6 +64,7 @@ function mockAerisAppFetch({
     if (url === DEMO_ALLOWANCE_STATUS_URL) {
       return Promise.resolve(
         jsonResponse({
+          access: "anonymous_demo",
           enabled: false,
           limit: 5,
           remaining: 5,

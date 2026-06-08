@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatPanel } from "./chat-panel";
 
 const DEMO_ALLOWANCE_STATUS_URL = "/api/demo-allowance/status";
+const RUNNER_OWNER_ACCESS_URL = "/api/runner-owner/access";
 const CHAT_URL = "/api/chat";
 
 const originalScrollIntoViewDescriptor = Reflect.getOwnPropertyDescriptor(
@@ -13,6 +14,7 @@ const originalScrollIntoViewDescriptor = Reflect.getOwnPropertyDescriptor(
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  window.history.pushState(null, "", "/");
 
   if (originalScrollIntoViewDescriptor) {
     Reflect.defineProperty(
@@ -45,6 +47,7 @@ function streamingResponse(events: Array<Record<string, unknown>>): Response {
 }
 
 type DemoAllowanceStatus = {
+  access: "anonymous_demo" | "runner_owner";
   enabled: boolean;
   limit: number;
   remaining: number;
@@ -65,6 +68,7 @@ function demoAllowanceStatusResponse(
   return new Response(
     JSON.stringify({
       enabled: false,
+      access: "anonymous_demo",
       limit: 5,
       remaining: 5,
       exhausted: false,
@@ -80,9 +84,14 @@ function demoAllowanceStatusResponse(
 
 function mockFetchRoutes({
   status = () => demoAllowanceStatusResponse(),
+  ownerAccess = () => jsonResponse({ ok: true }),
   chat,
 }: {
   status?: Response | (() => Response);
+  ownerAccess?: (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response> | Response;
   chat(input: RequestInfo | URL, init?: RequestInit): Promise<Response> | Response;
 }) {
   return vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
@@ -92,7 +101,18 @@ function mockFetchRoutes({
       return Promise.resolve(typeof status === "function" ? status() : status);
     }
 
+    if (url === RUNNER_OWNER_ACCESS_URL) {
+      return Promise.resolve(ownerAccess(input, init));
+    }
+
     return Promise.resolve(chat(input, init));
+  });
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -117,6 +137,12 @@ function mockChatResponses(...responses: Response[]) {
 
 function chatFetchCalls(fetchMock: FetchMock): FetchCall[] {
   return fetchMock.mock.calls.filter(([input]) => toFetchUrl(input) === CHAT_URL);
+}
+
+function runnerOwnerAccessFetchCalls(fetchMock: FetchMock): FetchCall[] {
+  return fetchMock.mock.calls.filter(
+    ([input]) => toFetchUrl(input) === RUNNER_OWNER_ACCESS_URL,
+  );
 }
 
 function toFetchUrl(input: RequestInfo | URL): string {
@@ -220,6 +246,48 @@ describe("ChatPanel", () => {
       expect(fetchMock).toHaveBeenCalledWith(DEMO_ALLOWANCE_STATUS_URL);
     });
     expect(screen.queryByText(/public demo/i)).toBeNull();
+  });
+
+  it("claims runner-owner access from the URL fragment before loading status", async () => {
+    window.history.pushState(null, "", "/#owner_access_token=owner-token");
+    const fetchMock = mockFetchRoutes({
+      status: demoAllowanceStatusResponse({
+        access: "runner_owner",
+        enabled: false,
+      }),
+      ownerAccess: () => jsonResponse({ ok: true }),
+      chat: () => streamingResponse([{ delta: "Owner answer." }, { done: true }]),
+    });
+
+    render(<ChatPanel />);
+
+    expect(await screen.findByText("Runner-owner access")).toBeTruthy();
+    expect(window.location.hash).toBe("");
+    expect(runnerOwnerAccessFetchCalls(fetchMock)).toHaveLength(1);
+
+    const [, accessRequest] = runnerOwnerAccessFetchCalls(fetchMock)[0] ?? [];
+    expect(accessRequest).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: "owner-token" }),
+      }),
+    );
+
+    const messageInput = screen.getByRole("textbox", {
+      name: /message/i,
+    }) as HTMLTextAreaElement;
+    expect(messageInput.disabled).toBe(false);
+
+    fireEvent.change(messageInput, {
+      target: { value: "Owner question" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /send/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Owner answer.")).toBeTruthy();
+    });
+    expect(chatFetchCalls(fetchMock)).toHaveLength(1);
   });
 
   it("enters the demo finished state from exhausted status", async () => {
