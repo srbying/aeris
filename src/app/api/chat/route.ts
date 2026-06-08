@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import {
+  buildDemoVisitorCookie,
+  consumeDemoChatTurn,
+  DEMO_VISITOR_COOKIE_NAME,
+} from "../../../lib/demo/demo-allowance";
+import {
+  generateDemoVisitorToken,
+  getDemoAllowanceRepository,
+} from "../../../lib/demo/dependencies";
 import { buildChatContext } from "../../../lib/llm/context";
 import {
   getChatActivityRepository,
@@ -87,6 +96,26 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
+    const demoTurnDecision = await consumeDemoChatTurn({
+      generateVisitorToken: generateDemoVisitorToken,
+      repository: getDemoAllowanceRepository(),
+      visitorToken: getCookieValue(request, DEMO_VISITOR_COOKIE_NAME),
+    });
+
+    if (!demoTurnDecision.allowed) {
+      if (demoTurnDecision.reason === "exhausted") {
+        return NextResponse.json(
+          { error: "Public demo chat allowance is finished." },
+          { status: 429 },
+        );
+      }
+
+      return NextResponse.json(
+        { error: "Public demo chat is temporarily unavailable. Please try again later." },
+        { status: 503 },
+      );
+    }
+
     const provider = getChatProvider();
     const messages: LLMMessage[] = [
       { role: "system", content: buildAerisSystemPrompt(context) },
@@ -99,13 +128,15 @@ export async function POST(request: Request): Promise<Response> {
     try {
       deltas = provider.stream({ messages, signal: request.signal });
     } catch {
-      return NextResponse.json(
+      const response = NextResponse.json(
         { error: "Aeris could not reach the AI provider. Please try again." },
         { status: 502 },
       );
+      applyDemoVisitorCookie(response, demoTurnDecision.visitorTokenToSet);
+      return response;
     }
 
-    return streamSse({
+    const response = streamSse({
       deltas,
       excludedSuggestions: parsedRequest.data.excludedSuggestions,
       history: parsedRequest.data.history,
@@ -113,12 +144,43 @@ export async function POST(request: Request): Promise<Response> {
       question: parsedRequest.data.message,
       signal: request.signal,
     });
+    applyDemoVisitorCookie(response, demoTurnDecision.visitorTokenToSet);
+    return response;
   } catch {
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },
       { status: 500 },
     );
   }
+}
+
+function getCookieValue(request: Request, name: string): string | null {
+  const cookieHeader = request.headers.get("Cookie") ?? request.headers.get("cookie");
+
+  if (!cookieHeader) {
+    return null;
+  }
+
+  for (const cookie of cookieHeader.split(";")) {
+    const [rawName, ...rawValueParts] = cookie.trim().split("=");
+
+    if (rawName === name) {
+      return decodeURIComponent(rawValueParts.join("="));
+    }
+  }
+
+  return null;
+}
+
+function applyDemoVisitorCookie(
+  response: NextResponse,
+  visitorTokenToSet: string | null,
+): void {
+  if (visitorTokenToSet === null) {
+    return;
+  }
+
+  response.cookies.set(buildDemoVisitorCookie(visitorTokenToSet));
 }
 
 async function parseChatRequest(
@@ -158,7 +220,7 @@ function streamSse({
   provider: ReturnType<typeof getChatProvider>;
   question: string;
   signal?: AbortSignal;
-}): Response {
+}): NextResponse {
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -195,7 +257,7 @@ function streamSse({
     },
   });
 
-  return new Response(stream, {
+  return new NextResponse(stream, {
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",
