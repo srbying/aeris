@@ -2,13 +2,30 @@ import { NextResponse } from "next/server";
 import { getActivityRepository } from "../../../lib/activity/activity-repository";
 import { parseGarminCsv } from "../../../lib/activity/garmin-parser";
 import { uploadResponseSchema } from "../../../lib/activity/schema";
+import {
+  hasRunnerOwnerAccess,
+  RUNNER_OWNER_ACCESS_COOKIE_NAME,
+} from "../../../lib/runner-owner/owner-access";
 
 export const dynamic = "force-dynamic";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const OWNER_UPLOAD_FORBIDDEN_MESSAGE =
+  "Only the runner owner can upload Garmin workouts. Public demo visitors can explore the existing data but cannot add workouts.";
 
 export async function POST(request: Request): Promise<Response> {
   try {
+    if (
+      !(await hasRunnerOwnerAccess({
+        cookieValue: getCookieValue(request, RUNNER_OWNER_ACCESS_COOKIE_NAME),
+      }))
+    ) {
+      return NextResponse.json(
+        { error: OWNER_UPLOAD_FORBIDDEN_MESSAGE },
+        { status: 403 },
+      );
+    }
+
     const formData = await request.formData();
     const file = formData.get("file");
 
@@ -68,4 +85,22 @@ export async function POST(request: Request): Promise<Response> {
       { status: 500 },
     );
   }
+}
+
+function getCookieValue(request: Request, name: string): string | null {
+  const cookieHeader = request.headers.get("Cookie") ?? request.headers.get("cookie");
+
+  if (!cookieHeader) {
+    return null;
+  }
+
+  for (const cookie of cookieHeader.split(";")) {
+    const [rawName, ...rawValueParts] = cookie.trim().split("=");
+
+    if (rawName === name) {
+      return decodeURIComponent(rawValueParts.join("="));
+    }
+  }
+
+  return null;
 }

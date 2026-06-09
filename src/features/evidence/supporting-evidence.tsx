@@ -1,6 +1,10 @@
 "use client";
 
-import { useId, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useState, type KeyboardEvent } from "react";
+import {
+  bootstrapDemoAllowanceStatus,
+  type DemoAllowanceStatus,
+} from "../../lib/demo/client-demo-access";
 import { Dashboard } from "../dashboard/dashboard";
 import { UploadPanel } from "../upload/upload-panel";
 
@@ -11,12 +15,35 @@ const evidenceTabs: { id: EvidenceTab; label: string }[] = [
   { id: "trend-evidence", label: "Trend evidence" },
   { id: "import-csv", label: "Import CSV" },
 ];
+const OWNER_UPLOAD_FORBIDDEN_MESSAGE =
+  "Only the runner owner can upload Garmin workouts. Public demo visitors can explore the existing data but cannot add workouts.";
 
 export function SupportingEvidence() {
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [activeTab, setActiveTab] = useState<EvidenceTab>("activity-history");
+  const [demoAllowanceStatus, setDemoAllowanceStatus] =
+    useState<DemoAllowanceStatus | null>(null);
   const tabRootId = useId();
   const tabPanelId = `${tabRootId}-panel`;
+  const hasOwnerUploadAccess = demoAllowanceStatus?.access === "runner_owner";
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadDemoAllowanceStatus() {
+      const nextStatus = await bootstrapDemoAllowanceStatus();
+
+      if (isMounted && nextStatus) {
+        setDemoAllowanceStatus(nextStatus);
+      }
+    }
+
+    void loadDemoAllowanceStatus();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   function focusTab(tab: EvidenceTab) {
     document.getElementById(tabId(tab))?.focus();
@@ -97,11 +124,15 @@ export function SupportingEvidence() {
         role="tabpanel"
       >
         {activeTab === "import-csv" ? (
-          <UploadPanel
-            onUploadComplete={() => {
-              setDashboardRefreshKey((currentKey) => currentKey + 1);
-            }}
-          />
+          hasOwnerUploadAccess ? (
+            <UploadPanel
+              onUploadComplete={() => {
+                setDashboardRefreshKey((currentKey) => currentKey + 1);
+              }}
+            />
+          ) : (
+            <OwnerOnlyUploadNotice />
+          )
         ) : null}
 
         <Dashboard
@@ -110,5 +141,19 @@ export function SupportingEvidence() {
         />
       </div>
     </aside>
+  );
+}
+
+function OwnerOnlyUploadNotice() {
+  return (
+    <section
+      aria-label="Import Garmin CSV"
+      className="flex w-full flex-col gap-3 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm shadow-zinc-200/60"
+    >
+      <h2 className="text-base font-semibold leading-6 text-zinc-950">Import Garmin CSV</h2>
+      <p className="text-sm font-medium leading-6 text-zinc-700">
+        {OWNER_UPLOAD_FORBIDDEN_MESSAGE}
+      </p>
+    </section>
   );
 }

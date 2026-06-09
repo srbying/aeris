@@ -20,6 +20,15 @@ type Activity = {
   efficiency: number | null;
 };
 
+type DemoAllowanceStatus = {
+  access: "anonymous_demo" | "runner_owner";
+  enabled: boolean;
+  limit: number;
+  remaining: number;
+  exhausted: boolean;
+  availability: "available" | "unavailable";
+};
+
 export const dashboardActivities: Activity[] = [
   activity("run-1", "2026-05-01T08:00:00.000Z", 8.1, 360, 145, 44),
   activity("run-2", "2026-05-03T08:00:00.000Z", 9.2, 358, 144, 45),
@@ -36,6 +45,27 @@ export async function mockActivities(page: Page, activities: Activity[]): Promis
     return route.fulfill({
       contentType: "application/json",
       json: activities,
+      status: 200,
+    });
+  });
+}
+
+export async function mockDemoAllowanceStatus(
+  page: Page,
+  overrides: Partial<DemoAllowanceStatus> = {},
+): Promise<void> {
+  await page.route("**/api/demo-allowance/status", (route) => {
+    return route.fulfill({
+      contentType: "application/json",
+      json: {
+        access: "anonymous_demo",
+        enabled: false,
+        limit: 5,
+        remaining: 5,
+        exhausted: false,
+        availability: "available",
+        ...overrides,
+      },
       status: 200,
     });
   });
