@@ -40,6 +40,40 @@ async function chartCardRects(page: Page): Promise<ChartRect[]> {
   );
 }
 
+async function chartPlotRects(page: Page): Promise<ChartRect[]> {
+  return page.locator('[data-testid$="-chart"]').evaluateAll((plots) =>
+    plots.map((plot) => {
+      const rect = plot.getBoundingClientRect();
+
+      return {
+        height: rect.height,
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+      };
+    }),
+  );
+}
+
+async function hoverPaceChartTooltip(page: Page): Promise<void> {
+  const paceChart = page.getByTestId("pace-heart-rate-chart");
+
+  await paceChart.hover();
+}
+
+async function visibleTooltipZIndexes(page: Page): Promise<number[]> {
+  return page.locator(".recharts-tooltip-wrapper").evaluateAll((tooltips) =>
+    tooltips
+      .filter((tooltip) => {
+        const style = window.getComputedStyle(tooltip);
+        const rect = tooltip.getBoundingClientRect();
+
+        return style.visibility !== "hidden" && rect.width > 30 && rect.height > 20;
+      })
+      .map((tooltip) => Number(window.getComputedStyle(tooltip).zIndex)),
+  );
+}
+
 test("renders default activity history tab and trend evidence from fixture-like data", async ({
   page,
 }) => {
@@ -124,6 +158,15 @@ test("lays out chart cards responsively", async ({ page }) => {
   const desktopRects = await chartCardRects(page);
   expect(rowCounts(desktopRects)).toEqual([2, 2]);
   expect(desktopRects.every((rect) => rect.height >= 220)).toBe(true);
+  const desktopPlotRects = await chartPlotRects(page);
+  expect(desktopPlotRects).toHaveLength(4);
+  expect(desktopPlotRects.every((rect) => rect.height >= 256)).toBe(true);
+
+  await hoverPaceChartTooltip(page);
+  await expect
+    .poll(async () => visibleTooltipZIndexes(page))
+    .toEqual(expect.arrayContaining([expect.any(Number)]));
+  expect((await visibleTooltipZIndexes(page)).every((zIndex) => zIndex >= 30)).toBe(true);
 
   await page.setViewportSize({ width: 768, height: 900 });
 

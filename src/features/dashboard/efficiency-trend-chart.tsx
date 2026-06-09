@@ -12,7 +12,14 @@ import {
   YAxis,
 } from "recharts";
 import type { EfficiencyTrend } from "../../lib/calculations/dashboard";
-import { ChartShell, EmptyPanel } from "./chart-shell";
+import {
+  ChartPlot,
+  ChartShell,
+  EmptyPanel,
+  chartTooltipContentStyle,
+  chartTooltipEscapeViewBox,
+  chartTooltipWrapperStyle,
+} from "./chart-shell";
 import { formatDateLabel } from "./formatters";
 
 type EfficiencyTrendChartProps = {
@@ -30,7 +37,7 @@ export function EfficiencyTrendChart({ trend }: EfficiencyTrendChartProps) {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-4 text-xs font-medium text-zinc-600">Efficiency</div>
-          <div className="min-h-0 min-w-0 flex-1" data-testid="efficiency-trend-chart">
+          <ChartPlot testId="efficiency-trend-chart">
             <ResponsiveContainer
               height="100%"
               initialDimension={{ width: 600, height: 256 }}
@@ -52,8 +59,11 @@ export function EfficiencyTrendChart({ trend }: EfficiencyTrendChartProps) {
                   tickLine={false}
                 />
                 <Tooltip
+                  allowEscapeViewBox={chartTooltipEscapeViewBox}
+                  contentStyle={chartTooltipContentStyle}
                   formatter={(value, name) => [Number(value).toFixed(4), name]}
                   labelFormatter={(label) => formatDateLabel(String(label))}
+                  wrapperStyle={chartTooltipWrapperStyle}
                 />
                 <Legend />
                 {trend.referenceEfficiency !== null ? (
@@ -82,7 +92,7 @@ export function EfficiencyTrendChart({ trend }: EfficiencyTrendChartProps) {
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ChartPlot>
         </div>
       )}
     </ChartShell>
