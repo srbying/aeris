@@ -10,7 +10,14 @@ import {
   YAxis,
 } from "recharts";
 import type { WeeklyMileagePoint } from "../../lib/calculations/weekly-mileage";
-import { ChartShell, EmptyPanel } from "./chart-shell";
+import {
+  ChartPlot,
+  ChartShell,
+  EmptyPanel,
+  chartTooltipContentStyle,
+  chartTooltipEscapeViewBox,
+  chartTooltipWrapperStyle,
+} from "./chart-shell";
 import { formatDateLabel } from "./formatters";
 
 type WeeklyMileageChartProps = {
@@ -26,7 +33,7 @@ export function WeeklyMileageChart({ data, hasActivities }: WeeklyMileageChartPr
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-4 text-xs font-medium text-zinc-600">Distance (km)</div>
-          <div className="min-h-0 min-w-0 flex-1" data-testid="weekly-mileage-chart">
+          <ChartPlot testId="weekly-mileage-chart">
             <ResponsiveContainer
               height="100%"
               initialDimension={{ width: 600, height: 256 }}
@@ -44,13 +51,16 @@ export function WeeklyMileageChart({ data, hasActivities }: WeeklyMileageChartPr
                 />
                 <YAxis tickLine={false} />
                 <Tooltip
+                  allowEscapeViewBox={chartTooltipEscapeViewBox}
+                  contentStyle={chartTooltipContentStyle}
                   formatter={(value) => [`${Number(value).toFixed(1)} km`, "Distance"]}
                   labelFormatter={(label) => formatDateLabel(String(label))}
+                  wrapperStyle={chartTooltipWrapperStyle}
                 />
                 <Bar dataKey="distanceKm" fill="#0f766e" name="Distance" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </ChartPlot>
         </div>
       )}
     </ChartShell>

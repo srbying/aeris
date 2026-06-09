@@ -216,11 +216,31 @@ describe("Dashboard", () => {
         ]),
       );
 
-      render(<Dashboard activeView="trend-evidence" />);
+      const { container } = render(<Dashboard activeView="trend-evidence" />);
 
       await waitFor(() => {
         expect(screen.getByTestId("pace-heart-rate-chart")).toBeTruthy();
       });
+
+      for (const testId of [
+        "pace-heart-rate-chart",
+        "efficiency-trend-chart",
+        "vo2-trend-chart",
+        "weekly-mileage-chart",
+      ]) {
+        const chartPlot = screen.getByTestId(testId);
+
+        expect(chartPlot.className).toContain("min-h-64");
+        expect(chartPlot.className).toContain("sm:min-h-72");
+      }
+      const tooltipWrappers = container.querySelectorAll<HTMLElement>(
+        ".recharts-tooltip-wrapper",
+      );
+
+      expect(tooltipWrappers.length).toBeGreaterThanOrEqual(4);
+      for (const tooltipWrapper of tooltipWrappers) {
+        expect(tooltipWrapper.style.zIndex).toBe("30");
+      }
 
       expect(screen.getByText("Pace (min/km)")).toBeTruthy();
       expect(screen.getByText("Heart rate (bpm)")).toBeTruthy();

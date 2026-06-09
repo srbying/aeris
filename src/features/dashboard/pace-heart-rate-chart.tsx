@@ -11,7 +11,14 @@ import {
   YAxis,
 } from "recharts";
 import type { PaceTrendPoint } from "../../lib/calculations/dashboard";
-import { EmptyPanel, ChartShell } from "./chart-shell";
+import {
+  ChartPlot,
+  ChartShell,
+  EmptyPanel,
+  chartTooltipContentStyle,
+  chartTooltipEscapeViewBox,
+  chartTooltipWrapperStyle,
+} from "./chart-shell";
 import { formatDateLabel, formatPace } from "./formatters";
 
 type PaceHeartRateChartProps = {
@@ -32,7 +39,7 @@ export function PaceHeartRateChart({ data }: PaceHeartRateChartProps) {
             <span>Pace (min/km)</span>
             <span>Heart rate (bpm)</span>
           </div>
-          <div className="min-h-0 min-w-0 flex-1" data-testid="pace-heart-rate-chart">
+          <ChartPlot testId="pace-heart-rate-chart">
             <ResponsiveContainer
               height="100%"
               initialDimension={{ width: 600, height: 256 }}
@@ -66,6 +73,8 @@ export function PaceHeartRateChart({ data }: PaceHeartRateChartProps) {
                   yAxisId="heart-rate"
                 />
                 <Tooltip
+                  allowEscapeViewBox={chartTooltipEscapeViewBox}
+                  contentStyle={chartTooltipContentStyle}
                   formatter={(value, name) => {
                     if (name === "Pace") {
                       return [formatPace(Number(value)), name];
@@ -74,6 +83,7 @@ export function PaceHeartRateChart({ data }: PaceHeartRateChartProps) {
                     return [`${Math.round(Number(value))} bpm`, name];
                   }}
                   labelFormatter={(label) => formatDateLabel(String(label))}
+                  wrapperStyle={chartTooltipWrapperStyle}
                 />
                 <Legend />
                 <Line
@@ -96,7 +106,7 @@ export function PaceHeartRateChart({ data }: PaceHeartRateChartProps) {
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ChartPlot>
         </div>
       )}
     </ChartShell>

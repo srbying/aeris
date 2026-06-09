@@ -11,7 +11,14 @@ import {
   YAxis,
 } from "recharts";
 import type { Vo2Trend } from "../../lib/calculations/dashboard";
-import { ChartShell, EmptyPanel } from "./chart-shell";
+import {
+  ChartPlot,
+  ChartShell,
+  EmptyPanel,
+  chartTooltipContentStyle,
+  chartTooltipEscapeViewBox,
+  chartTooltipWrapperStyle,
+} from "./chart-shell";
 import { formatDateLabel } from "./formatters";
 
 type Vo2TrendChartProps = {
@@ -26,7 +33,7 @@ export function Vo2TrendChart({ trend }: Vo2TrendChartProps) {
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-4 text-xs font-medium text-zinc-600">Estimate</div>
-          <div className="min-h-0 min-w-0 flex-1" data-testid="vo2-trend-chart">
+          <ChartPlot testId="vo2-trend-chart">
             <ResponsiveContainer
               height="100%"
               initialDimension={{ width: 600, height: 256 }}
@@ -44,8 +51,11 @@ export function Vo2TrendChart({ trend }: Vo2TrendChartProps) {
                 />
                 <YAxis domain={["dataMin - 2", "dataMax + 2"]} tickLine={false} />
                 <Tooltip
+                  allowEscapeViewBox={chartTooltipEscapeViewBox}
+                  contentStyle={chartTooltipContentStyle}
                   formatter={(value, name) => [Number(value).toFixed(1), name]}
                   labelFormatter={(label) => formatDateLabel(String(label))}
+                  wrapperStyle={chartTooltipWrapperStyle}
                 />
                 <Legend />
                 <Line
@@ -67,7 +77,7 @@ export function Vo2TrendChart({ trend }: Vo2TrendChartProps) {
                 />
               </LineChart>
             </ResponsiveContainer>
-          </div>
+          </ChartPlot>
         </div>
       )}
     </ChartShell>
