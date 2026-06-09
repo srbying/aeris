@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { Page, Route } from "playwright/test";
+import type { DemoAllowanceStatus } from "../../../src/lib/demo/client-demo-access";
 
 export const garminSmallCsvPath = path.join(process.cwd(), "test-fixtures", "garmin-small.csv");
 
@@ -36,6 +37,27 @@ export async function mockActivities(page: Page, activities: Activity[]): Promis
     return route.fulfill({
       contentType: "application/json",
       json: activities,
+      status: 200,
+    });
+  });
+}
+
+export async function mockDemoAllowanceStatus(
+  page: Page,
+  overrides: Partial<DemoAllowanceStatus> = {},
+): Promise<void> {
+  await page.route("**/api/demo-allowance/status", (route) => {
+    return route.fulfill({
+      contentType: "application/json",
+      json: {
+        access: "anonymous_demo",
+        enabled: false,
+        limit: 5,
+        remaining: 5,
+        exhausted: false,
+        availability: "available",
+        ...overrides,
+      },
       status: 200,
     });
   });

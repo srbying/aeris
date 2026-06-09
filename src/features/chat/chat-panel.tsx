@@ -2,6 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
+import {
+  bootstrapDemoAllowanceStatus,
+  readDemoAllowanceStatus,
+  type DemoAllowanceStatus,
+} from "../../lib/demo/client-demo-access";
 import { ChatInput } from "./chat-input";
 import { type ChatMessage, MessageList } from "./message-list";
 
@@ -17,19 +22,7 @@ const StreamEventSchema = z
   })
   .strict();
 
-const DemoAllowanceStatusSchema = z
-  .object({
-    access: z.enum(["anonymous_demo", "runner_owner"]),
-    enabled: z.boolean(),
-    limit: z.number().int().positive(),
-    remaining: z.number().int().nonnegative(),
-    exhausted: z.boolean(),
-    availability: z.enum(["available", "unavailable"]),
-  })
-  .strict();
-
 type StreamEvent = z.infer<typeof StreamEventSchema>;
-type DemoAllowanceStatus = z.infer<typeof DemoAllowanceStatusSchema>;
 type ChatHistoryMessage = Pick<ChatMessage, "role" | "content">;
 
 const STARTER_PROMPTS = [
@@ -40,8 +33,6 @@ const STARTER_PROMPTS = [
 
 const MAX_EXCLUDED_SUGGESTIONS = 20;
 const MAX_FOLLOW_UP_PROMPTS = 3;
-const RUNNER_OWNER_ACCESS_FRAGMENT_KEY = "owner_access_token";
-const RUNNER_OWNER_ACCESS_URL = "/api/runner-owner/access";
 const DEMO_FINISHED_MESSAGE =
   "Public demo complete. Your conversation stays here, but new questions are paused.";
 const DEMO_UNAVAILABLE_MESSAGE =
@@ -66,8 +57,7 @@ export function ChatPanel() {
     let isMounted = true;
 
     async function bootstrapChatAccessAndStatus() {
-      await claimRunnerOwnerAccessFromFragment();
-      const nextStatus = await readDemoAllowanceStatus();
+      const nextStatus = await bootstrapDemoAllowanceStatus();
 
       if (isMounted && nextStatus) {
         setDemoAllowanceStatus(nextStatus);
@@ -396,74 +386,6 @@ function formatDemoAllowanceStatus(status: DemoAllowanceStatus): string {
 
   const turnLabel = status.remaining === 1 ? "turn" : "turns";
   return `Public demo: ${status.remaining} ${turnLabel} left`;
-}
-
-async function readDemoAllowanceStatus(): Promise<DemoAllowanceStatus | null> {
-  try {
-    const response = await fetch("/api/demo-allowance/status");
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const parsedStatus = DemoAllowanceStatusSchema.safeParse(await response.json());
-
-    return parsedStatus.success ? parsedStatus.data : null;
-  } catch {
-    return null;
-  }
-}
-
-async function claimRunnerOwnerAccessFromFragment(): Promise<void> {
-  const token = readRunnerOwnerAccessTokenFromFragment();
-
-  if (token === null) {
-    return;
-  }
-
-  stripLocationFragment();
-
-  try {
-    await fetch(RUNNER_OWNER_ACCESS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    });
-  } catch {
-    return;
-  }
-}
-
-function readRunnerOwnerAccessTokenFromFragment(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const fragment = window.location.hash.startsWith("#")
-    ? window.location.hash.slice(1)
-    : window.location.hash;
-
-  if (fragment.length === 0) {
-    return null;
-  }
-
-  const token = new URLSearchParams(fragment)
-    .get(RUNNER_OWNER_ACCESS_FRAGMENT_KEY)
-    ?.trim();
-
-  return token && token.length > 0 ? token : null;
-}
-
-function stripLocationFragment(): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.history.replaceState(
-    null,
-    document.title,
-    `${window.location.pathname}${window.location.search}`,
-  );
 }
 
 async function sendChatMessage({
