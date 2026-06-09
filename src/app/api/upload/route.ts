@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getActivityRepository } from "../../../lib/activity/activity-repository";
 import { parseGarminCsv } from "../../../lib/activity/garmin-parser";
 import { uploadResponseSchema } from "../../../lib/activity/schema";
+import { OWNER_UPLOAD_FORBIDDEN_MESSAGE } from "../../../lib/activity/upload-messages";
 import {
   hasRunnerOwnerAccess,
   RUNNER_OWNER_ACCESS_COOKIE_NAME,
@@ -10,8 +11,6 @@ import {
 export const dynamic = "force-dynamic";
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-const OWNER_UPLOAD_FORBIDDEN_MESSAGE =
-  "Only the runner owner can upload Garmin workouts. Public demo visitors can explore the existing data but cannot add workouts.";
 
 export async function POST(request: Request): Promise<Response> {
   try {
@@ -88,7 +87,7 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 function getCookieValue(request: Request, name: string): string | null {
-  const cookieHeader = request.headers.get("Cookie") ?? request.headers.get("cookie");
+  const cookieHeader = request.headers.get("cookie");
 
   if (!cookieHeader) {
     return null;

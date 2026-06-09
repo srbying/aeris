@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "../../src/app/api/upload/route";
 import { resetActivityRepositoryForTests } from "../../src/lib/activity/activity-repository";
+import { OWNER_UPLOAD_FORBIDDEN_MESSAGE } from "../../src/lib/activity/upload-messages";
 import {
   hashRunnerOwnerAccessToken,
   RUNNER_OWNER_ACCESS_COOKIE_NAME,
@@ -11,8 +12,6 @@ import {
 const garminCsv = `Activity Type,Date,Title,Distance,Calories,Time,Avg HR,Max HR,Avg Pace,Best Pace,Total Ascent,Total Descent,VO2 Max
 Running,2026-05-17 08:12:48,"Avon Lake - Long Run","6.90","1,233","01:20:04","148","172","11:36","8:04","89","82","49"
 Running,2026-05-18 08:12:48,"Easy Run","4.00","700","00:41:00","142","165","10:15","8:50","40","38","48"`;
-const ownerUploadMessage =
-  "Only the runner owner can upload Garmin workouts. Public demo visitors can explore the existing data but cannot add workouts.";
 const ownerToken = "owner-token";
 
 function uploadRequest(file: File, cookie?: string): Request {
@@ -53,7 +52,7 @@ describe("POST /api/upload", () => {
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body).toEqual({ error: ownerUploadMessage });
+    expect(body).toEqual({ error: OWNER_UPLOAD_FORBIDDEN_MESSAGE });
   });
 
   it("accepts a Garmin CSV file and returns inserted row counts", async () => {

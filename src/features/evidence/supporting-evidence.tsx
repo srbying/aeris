@@ -5,6 +5,7 @@ import {
   bootstrapDemoAllowanceStatus,
   type DemoAllowanceStatus,
 } from "../../lib/demo/client-demo-access";
+import { OWNER_UPLOAD_FORBIDDEN_MESSAGE } from "../../lib/activity/upload-messages";
 import { Dashboard } from "../dashboard/dashboard";
 import { UploadPanel } from "../upload/upload-panel";
 
@@ -15,14 +16,13 @@ const evidenceTabs: { id: EvidenceTab; label: string }[] = [
   { id: "trend-evidence", label: "Trend evidence" },
   { id: "import-csv", label: "Import CSV" },
 ];
-const OWNER_UPLOAD_FORBIDDEN_MESSAGE =
-  "Only the runner owner can upload Garmin workouts. Public demo visitors can explore the existing data but cannot add workouts.";
 
 export function SupportingEvidence() {
   const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [activeTab, setActiveTab] = useState<EvidenceTab>("activity-history");
   const [demoAllowanceStatus, setDemoAllowanceStatus] =
     useState<DemoAllowanceStatus | null>(null);
+  const [isDemoAllowanceStatusResolved, setIsDemoAllowanceStatusResolved] = useState(false);
   const tabRootId = useId();
   const tabPanelId = `${tabRootId}-panel`;
   const hasOwnerUploadAccess = demoAllowanceStatus?.access === "runner_owner";
@@ -33,8 +33,9 @@ export function SupportingEvidence() {
     async function loadDemoAllowanceStatus() {
       const nextStatus = await bootstrapDemoAllowanceStatus();
 
-      if (isMounted && nextStatus) {
+      if (isMounted) {
         setDemoAllowanceStatus(nextStatus);
+        setIsDemoAllowanceStatusResolved(true);
       }
     }
 
@@ -124,7 +125,7 @@ export function SupportingEvidence() {
         role="tabpanel"
       >
         {activeTab === "import-csv" ? (
-          hasOwnerUploadAccess ? (
+          !isDemoAllowanceStatusResolved ? null : hasOwnerUploadAccess ? (
             <UploadPanel
               onUploadComplete={() => {
                 setDashboardRefreshKey((currentKey) => currentKey + 1);

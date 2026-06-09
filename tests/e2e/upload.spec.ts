@@ -5,9 +5,7 @@ import {
   mockDemoAllowanceStatus,
   mockUploadSequence,
 } from "./helpers/fixtures";
-
-const ownerUploadMessage =
-  "Only the runner owner can upload Garmin workouts. Public demo visitors can explore the existing data but cannot add workouts.";
+import { OWNER_UPLOAD_FORBIDDEN_MESSAGE } from "../../src/lib/activity/upload-messages";
 
 test("uploads Garmin CSV and reports duplicates on re-upload", async ({ page }) => {
   await mockActivities(page, []);
@@ -45,7 +43,7 @@ test("shows public demo visitors that uploads are owner-only", async ({ page }) 
 
   await page.getByRole("tab", { name: "Import CSV" }).click();
 
-  await expect(page.getByText(ownerUploadMessage)).toBeVisible();
+  await expect(page.getByText(OWNER_UPLOAD_FORBIDDEN_MESSAGE)).toBeVisible();
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
   expect(uploadRequests).toBe(0);
 });

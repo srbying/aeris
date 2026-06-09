@@ -1,13 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { OWNER_UPLOAD_FORBIDDEN_MESSAGE } from "../../lib/activity/upload-messages";
 import type { PublicActivity } from "../../lib/activity/types";
 import { AerisApp } from "./aeris-app";
 
 const DEMO_ALLOWANCE_STATUS_URL = "/api/demo-allowance/status";
 const ACTIVITIES_URL = "/api/activities";
 const UPLOAD_URL = "/api/upload";
-const ownerUploadMessage =
-  "Only the runner owner can upload Garmin workouts. Public demo visitors can explore the existing data but cannot add workouts.";
 
 type DemoAllowanceStatus = {
   access: "anonymous_demo" | "runner_owner";
@@ -62,18 +61,11 @@ function jsonResponse(body: unknown): Response {
 
 function mockAerisAppFetch({
   activityResponses,
-  demoAllowanceStatus = {
-    access: "anonymous_demo",
-    enabled: false,
-    limit: 5,
-    remaining: 5,
-    exhausted: false,
-    availability: "available",
-  },
+  demoAllowanceStatus = anonymousDemoStatus(),
   uploadResponse = { inserted: 1, skipped: 0, errors: [] },
 }: {
   activityResponses: PublicActivity[][];
-  demoAllowanceStatus?: DemoAllowanceStatus;
+  demoAllowanceStatus?: DemoAllowanceStatus | Promise<DemoAllowanceStatus>;
   uploadResponse?: unknown;
 }) {
   let activityResponseIndex = 0;
@@ -82,7 +74,7 @@ function mockAerisAppFetch({
     const url = toFetchUrl(input);
 
     if (url === DEMO_ALLOWANCE_STATUS_URL) {
-      return Promise.resolve(jsonResponse(demoAllowanceStatus));
+      return Promise.resolve(demoAllowanceStatus).then(jsonResponse);
     }
 
     if (url === ACTIVITIES_URL) {
@@ -106,6 +98,32 @@ function mockAerisAppFetch({
       }),
     );
   });
+}
+
+function anonymousDemoStatus(
+  overrides: Partial<DemoAllowanceStatus> = {},
+): DemoAllowanceStatus {
+  return {
+    access: "anonymous_demo",
+    enabled: false,
+    limit: 5,
+    remaining: 5,
+    exhausted: false,
+    availability: "available",
+    ...overrides,
+  };
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
+  let resolveDeferred: (value: T) => void = () => {};
+  const promise = new Promise<T>((resolve) => {
+    resolveDeferred = resolve;
+  });
+
+  return {
+    promise,
+    resolve: resolveDeferred,
+  };
 }
 
 function nonStatusFetchUrls(fetchMock: { mock: { calls: Parameters<typeof fetch>[] } }): string[] {
@@ -269,9 +287,32 @@ describe("AerisApp", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Import CSV" }));
 
     expect(screen.getByRole("region", { name: /import garmin csv/i })).toBeTruthy();
-    expect(screen.getByText(ownerUploadMessage)).toBeTruthy();
+    expect(screen.getByText(OWNER_UPLOAD_FORBIDDEN_MESSAGE)).toBeTruthy();
     expect(container.querySelector('input[type="file"]')).toBeNull();
     expect(screen.queryByRole("button", { name: /upload/i })).toBeNull();
     expect(nonStatusFetchUrls(fetchMock)).toEqual(["/api/activities"]);
+  });
+
+  it("defers import controls until demo access status resolves", async () => {
+    const demoAllowanceStatus = deferred<DemoAllowanceStatus>();
+    mockAerisAppFetch({
+      activityResponses: [[]],
+      demoAllowanceStatus: demoAllowanceStatus.promise,
+    });
+
+    const { container } = render(<AerisApp />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No activities uploaded yet.")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("tab", { name: "Import CSV" }));
+
+    expect(screen.queryByText(OWNER_UPLOAD_FORBIDDEN_MESSAGE)).toBeNull();
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+
+    demoAllowanceStatus.resolve(anonymousDemoStatus());
+
+    expect(await screen.findByText(OWNER_UPLOAD_FORBIDDEN_MESSAGE)).toBeTruthy();
   });
 });

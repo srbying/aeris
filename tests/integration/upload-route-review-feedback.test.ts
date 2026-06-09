@@ -18,13 +18,12 @@ vi.mock("../../src/lib/activity/activity-repository", () => ({
 }));
 
 import { POST } from "../../src/app/api/upload/route";
+import { OWNER_UPLOAD_FORBIDDEN_MESSAGE } from "../../src/lib/activity/upload-messages";
 import {
   hashRunnerOwnerAccessToken,
   RUNNER_OWNER_ACCESS_COOKIE_NAME,
 } from "../../src/lib/runner-owner/owner-access";
 
-const ownerUploadMessage =
-  "Only the runner owner can upload Garmin workouts. Public demo visitors can explore the existing data but cannot add workouts.";
 const ownerToken = "owner-token";
 
 function uploadRequest(cookie?: string): Request {
@@ -58,7 +57,7 @@ describe("POST /api/upload review feedback", () => {
     const body = await response.json();
 
     expect(response.status).toBe(403);
-    expect(body).toEqual({ error: ownerUploadMessage });
+    expect(body).toEqual({ error: OWNER_UPLOAD_FORBIDDEN_MESSAGE });
     expect(mocks.parseGarminCsv).not.toHaveBeenCalled();
     expect(mocks.insertActivities).not.toHaveBeenCalled();
   });

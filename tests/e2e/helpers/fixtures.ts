@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { Page, Route } from "playwright/test";
+import type { DemoAllowanceStatus } from "../../../src/lib/demo/client-demo-access";
 
 export const garminSmallCsvPath = path.join(process.cwd(), "test-fixtures", "garmin-small.csv");
 
@@ -18,15 +19,6 @@ type Activity = {
   rawCsvRow: Record<string, string>;
   createdAt: string;
   efficiency: number | null;
-};
-
-type DemoAllowanceStatus = {
-  access: "anonymous_demo" | "runner_owner";
-  enabled: boolean;
-  limit: number;
-  remaining: number;
-  exhausted: boolean;
-  availability: "available" | "unavailable";
 };
 
 export const dashboardActivities: Activity[] = [
