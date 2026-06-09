@@ -91,6 +91,16 @@ This directly addresses the context size problem while keeping the product decis
 
 The full activity history is still stored in Supabase - only the default context window sent to the LLM is scoped to `ACTIVITY_CONTEXT_MONTHS`. The dashboard charts can use the full dataset or chart-specific windows without architectural changes.
 
+## **1.5 Public Demo API Platform Protection**
+
+Decision: Do not add custom Vercel Firewall or WAF rules for the initial public demo. Keep Vercel's automatic platform protections as part of hosting, and rely on Aeris' server-enforced demo conversation allowance as the product-level OpenAI cost guardrail.
+
+The five-turn anonymous demo visitor promise is an application contract. Visitor identity, remaining turns, owner bypass, invalid-message exclusions, setup-blocked exclusions, and pre-model-call consumption all belong in the demo allowance service. Coarse platform controls can reduce broad API abuse, but they cannot decide whether a specific anonymous demo visitor still has demo chat turns remaining.
+
+Custom Vercel Firewall or WAF protection is therefore not selected for `/api/chat`, all public API routes, or any narrower route subset at initial launch. No custom log-only, challenge, deny, or rate-limit behavior is planned for the initial public demo. If production traffic shows broad request abuse after the server-enforced allowance ships, create a follow-up implementation ticket that specifies the exact public API route scope and mitigation behavior, likely starting with log-only observation or a conservative rate limit before challenge or deny rules.
+
+Any future Vercel Firewall or WAF configuration remains a secondary abuse-control layer and must not replace the server-enforced demo conversation allowance.
+
 # **2\. Full Stack Summary**
 
 | **Layer**     | **Technology**                   | **Tier / Cost** | **Notes**                                         |

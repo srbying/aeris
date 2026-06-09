@@ -5,6 +5,7 @@ import {
   buildReadOnlyDemoAllowanceStatus,
   consumeDemoChatTurn,
   createInMemoryDemoAllowanceRepository,
+  createSupabaseDemoAllowanceRepository,
   demoAllowanceStatusSchema,
   readDemoAllowanceStatus,
 } from "./demo-allowance";
@@ -263,5 +264,20 @@ describe("read-only demo allowance status", () => {
         availability: "unavailable",
       },
     });
+  });
+
+  it("requires a server-only Supabase service role key for demo usage storage", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("[]", { status: 200 }));
+    const repository = createSupabaseDemoAllowanceRepository({
+      NEXT_PUBLIC_SUPABASE_URL: "https://project.supabase.co",
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: "anon-key",
+    });
+
+    await expect(repository.checkAvailability()).rejects.toThrow(
+      "SUPABASE_SERVICE_ROLE_KEY is required for demo usage storage.",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -428,11 +428,14 @@ function getSupabaseDemoUsageConfig(env: DemoAllowanceEnvironment): {
   url: string;
 } {
   const url = env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const key =
-    env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+  const key = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
 
-  if (!url || !key) {
+  if (!url) {
     throw new Error("Supabase demo usage environment variables are missing.");
+  }
+
+  if (!key) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for demo usage storage.");
   }
 
   return { url, key };
